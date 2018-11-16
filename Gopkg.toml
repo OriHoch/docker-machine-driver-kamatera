@@ -1,0 +1,15 @@
+[[constraint]]
+  name = "github.com/docker/machine"
+  version = "0.15.0"
+
+[[constraint]]
+  name = "github.com/pkg/errors"
+  version = "0.8.0"
+
+[[constraint]]
+  name = "github.com/go-resty/resty"
+  version = "1.10.2"
+
+[prune]
+  go-tests = true
+  unused-packages = true
