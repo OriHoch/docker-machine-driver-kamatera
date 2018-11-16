@@ -1,14 +1,19 @@
 # Kamatera Docker Macine Driver
 
+<!--
 [![Go Report Card](https://goreportcard.com/badge/github.com/OriHoch/docker-machine-driver-kamatera)](https://goreportcard.com/report/github.com/OriHoch/docker-machine-driver-kamatera)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://secure.travis-ci.org/OriHoch/docker-machine-driver-kamatera.png)](http://travis-ci.org/OriHoch/docker-machine-driver-kamatera)
+-->
+
+**Work In Progress** Binaries are not available, you have to build from source according to the instructions below.
 
 > This library adds the support for creating [Docker machines](https://github.com/docker/machine) hosted on the [Kamatera Cloud](https://www.kamatera.com/).
 
 You need to create a Kamatera access token under `API` > `Keys` in the [Kamatera console](https://console.kamatera.com/keys).
-and pass that to `docker-machine create` with the `--kamatera-api-token` option.
+and pass that to `docker-machine create` with the `--kamatera-api-client-id` and `--kamatera-api-secret` options.
 
+<!--
 ## Installation
 
 You can find sources and pre-compiled binaries [here](https://github.com/OriHoch/docker-machine-driver-kamatera/releases).
@@ -22,23 +27,15 @@ $ tar -xvf docker-machine-driver-kamatera_0.0.1_linux_amd64.tar.gz
 $ chmod +x docker-machine-driver-kamatera
 $ cp docker-machine-driver-kamatera /usr/local/bin/
 ```
+-->
 
 ## Usage
 
 ```bash
-$ docker-machine create --driver kamatera --kamatera-api-token=*** some-machine
+$ docker-machine --debug create --driver kamatera --kamatera-api-client-id KAMATERA_API_CLIENT_ID --kamatera-api-secret KAMATERA_API_SECRET --kamatera-password KAMATERA_SERVER_PASSWORD MACHINE_NAME
 ```
-
-### Using environment variables
-
-```bash
-$ kamatera_API_TOKEN=*** \
-  && kamatera_IMAGE=centos-7 \
-  && docker-machine create \
-     --driver kamatera \
-     some-machine
-```   
-
+   
+<!--
 ### Dealing with kernels without aufs
 
 If you use an image without aufs, like the one currently supplied with the
@@ -87,17 +84,9 @@ $ docker-machine create \
 
 ## Options
 
-- `--kamatera-api-token`: **required**. Your project-specific access token for the kamatera Cloud API.
-- `--kamatera-image`: The name of the kamatera Cloud image to use, see [Images API](https://docs.kamatera.cloud/#resources-images-get) for how to get a list (defaults to `ubuntu-16.04`).
-- `--kamatera-image-id`: The id of the kamatera cloud image (or snapshot) to use, see [Images API](https://docs.kamatera.cloud/#resources-images-get) for how to get a list (mutually excludes `--kamatera-image`).
-- `--kamatera-server-type`: The type of the kamatera Cloud server, see [Server Types API](https://docs.kamatera.cloud/#resources-server-types-get) for how to get a list (defaults to `cx11`).
-- `--kamatera-server-location`: The location to create the server in, see [Locations API](https://docs.kamatera.cloud/#resources-locations-get) for how to get a list.
-**NOTICE: Beware that kamatera does not reject invalid location names at the time of writing this; instead, a seemingly random location is chosen. Double check both the option value's
-spelling and the newly created server to make sure the desired location was chosen indeed.**
-- `--kamatera-existing-key-path`: Use an existing (local) SSH key instead of generating a new keypair.
-- `--kamatera-existing-key-id`: **requires `--kamatera-existing-key-path`**. Use an existing (remote) SSH key instead of uploading the imported key pair,
-  see [SSH Keys API](https://docs.kamatera.cloud/#resources-ssh-keys-get) for how to get a list
-- `--kamatera-user-data`: Cloud-init based User data
+- `--kamatera-api-client-id`: **required**. Your project-specific access token for the kamatera Cloud API.
+- `--kamatera-api-secret`: **required**. You Kamatera API secret.
+- `--kamatera-password`: **required**. Password for the new server.
 
 #### Existing SSH keys
 
@@ -126,7 +115,7 @@ was used during creation.
 | `--kamatera-existing-key-path`       | `kamatera_EXISTING_KEY_PATH`       | - *(generate new keypair)* |
 | `--kamatera-existing-key-id`         | `kamatera_EXISTING_KEY_ID`         | 0 *(upload new key)*       |
 | `--kamatera-user-data`               | `kamatera_USER_DATA`               | -                          |
-
+-->
 
 ## Building from source
 
