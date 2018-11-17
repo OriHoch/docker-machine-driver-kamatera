@@ -32,7 +32,7 @@ $ cp docker-machine-driver-kamatera /usr/local/bin/
 ## Usage
 
 ```bash
-$ docker-machine --debug create --driver kamatera --kamatera-api-client-id KAMATERA_API_CLIENT_ID --kamatera-api-secret KAMATERA_API_SECRET --kamatera-password KAMATERA_SERVER_PASSWORD MACHINE_NAME
+$ docker-machine create --driver kamatera --kamatera-api-client-id KAMATERA_API_CLIENT_ID --kamatera-api-secret KAMATERA_API_SECRET
 ```
    
 <!--

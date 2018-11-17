@@ -68,6 +68,14 @@
   version = "v0.8.0"
 
 [[projects]]
+  digest = "1:1af58d182e3b1008d25d7ba65ff7c2631a246023d3b814f9ba8c7919aded59f3"
+  name = "github.com/sethvargo/go-password"
+  packages = ["password"]
+  pruneopts = "UT"
+  revision = "bc15c697eeda69a082991d2f1ed37660658fea32"
+  version = "v0.1.2"
+
+[[projects]]
   digest = "1:3f53e9e4dfbb664cd62940c9c4b65a2171c66acd0b7621a1a6b8e78513525a52"
   name = "github.com/sirupsen/logrus"
   packages = ["."]
@@ -146,9 +154,12 @@
     "github.com/docker/machine/libmachine/log",
     "github.com/docker/machine/libmachine/mcnflag",
     "github.com/docker/machine/libmachine/mcnutils",
+    "github.com/docker/machine/libmachine/ssh",
     "github.com/docker/machine/libmachine/state",
     "github.com/go-resty/resty",
     "github.com/pkg/errors",
+    "github.com/sethvargo/go-password/password",
+    "golang.org/x/crypto/ssh",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
