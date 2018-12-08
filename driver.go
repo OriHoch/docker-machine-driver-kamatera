@@ -45,6 +45,7 @@ type Driver struct {
 	DiskImageId string
 	DatacenterName string
 	Password string
+	KamateraServerId string
 }
 
 const (
@@ -75,6 +76,7 @@ func NewDriver() *Driver {
 	    DiskSize: defaultDiskSize,
 	    Image: defaultImage,
 	    CreateServerCommandId: 0,
+	    KamateraServerId: "",
 	    BaseDriver: &drivers.BaseDriver{
 			SSHUser: "root",
 			SSHPort: 22,
@@ -200,15 +202,6 @@ type KamateraServerCommandInfo struct {
     Log string `json:log`
 }
 
-type KamateraServerListInfo struct {
-    Id string `json:id`
-    Datacenter string `json:datacenter`
-    Name string `json:name`
-    Power string `json:power`
-}
-
-type KamateraServersList []KamateraServerListInfo
-
 func IsStringInArray(str string, arr []string) bool {
     for _, n := range arr {if str == n {return true}}; return false
 }
@@ -256,10 +249,8 @@ func (d *Driver) Create() error {
         log.Debugf("Disk Image: %s %s", d.Image, d.DiskImageId)
         _password, err := password.Generate(12, 5, 1, false, false)
         if err != nil {return err}
-        log.Debugf("%s", _password)
         d.Password = _password
         qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%s&billing=%s&disk_size_0=%s&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0", d.Datacenter, d.MachineName, d.Password, d.Cpu, fmt.Sprintf("%d", d.Ram), d.Billing, fmt.Sprintf("%d", d.DiskSize), strings.Replace(d.DiskImageId, ":", "%3A", -1), "wan")
-        log.Debugf("%s", qs)
         payload := strings.NewReader(qs)
         req, err := http.NewRequest("POST", "https://console.kamatera.com/service/server", payload)
         if err != nil {return err}
@@ -308,17 +299,17 @@ func (d *Driver) Create() error {
     if err := mcnssh.GenerateSSHKey(d.GetSSHKeyPath()); err != nil {
         return errors.Wrap(err, "could not generate ssh key")
     }
-    log.Debugf("Waiting for SSH access...")
-    for {
-        srvstate, _ := d.GetState()
-        if srvstate == state.Running {break}
-        time.Sleep(1 * time.Second)
-    }
     buf, err := ioutil.ReadFile(d.GetSSHKeyPath() + ".pub")
     if err != nil {
         return errors.Wrap(err, "could not read ssh public key")
     }
     pkey := string(buf)
+    log.Debugf("Waiting for server status...")
+    for {
+        srvstate, _ := d.GetState()
+        if srvstate == state.Running {break}
+        time.Sleep(1 * time.Second)
+    }
     config := &ssh.ClientConfig{
         User: "root",
         Auth: []ssh.AuthMethod{
@@ -327,18 +318,23 @@ func (d *Driver) Create() error {
         HostKeyCallback: ssh.InsecureIgnoreHostKey(),
     }
     log.Debugf("Copying SSH key to the server")
-    client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", d.IPAddress), config)
-    if err != nil {return errors.Wrap(err, "Failed to contact the Kamatera server via SSH")}
-    session, err := client.NewSession()
-    if err != nil {return errors.Wrap(err, "Failed to initiate an SSH session to the Kamatera server")}
-    defer session.Close()
-    var b bytes.Buffer
-    session.Stdout = &b
-    cmd := fmt.Sprintf("bash -c 'mkdir -p .ssh && echo \"%s\" >> .ssh/authorized_keys'", pkey)
-    log.Debugf(cmd)
-    err = session.Run(cmd)
-    if err != nil {return errors.Wrap(err, "Failed to copy SSH key to the Kamatera server")}
-    return nil
+    for {
+        time.Sleep(1 * time.Second)
+        client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", d.IPAddress), config)
+        if err == nil {
+            session, err := client.NewSession()
+            if err == nil {
+                defer session.Close()
+                var b bytes.Buffer
+                session.Stdout = &b
+                cmd := fmt.Sprintf("bash -c 'mkdir -p .ssh && echo \"%s\" >> .ssh/authorized_keys'", pkey)
+                log.Debugf(cmd)
+                err = session.Run(cmd)
+                if err != nil {return errors.Wrap(err, "Failed to copy SSH key to the Kamatera server")}
+                return nil
+            }
+        }
+    }
 }
 
 func (d *Driver) GetSSHHostname() (string, error) {
@@ -353,91 +349,112 @@ func (d *Driver) GetURL() (string, error) {
 }
 
 func (d *Driver) GetState() (state.State, error) {
-    config := &ssh.ClientConfig{
-        User: "root",
-        Auth: []ssh.AuthMethod{
-            ssh.Password(d.Password),
-        },
-        HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-    }
-    client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", d.IPAddress), config)
-    if err == nil {
-        session, err := client.NewSession()
-        if err == nil {
-            defer session.Close()
-            var b bytes.Buffer
-            session.Stdout = &b
-            err := session.Run("/usr/bin/whoami")
-            if err == nil {
-                log.Debugf(b.String())
-                return state.Running, nil
-            } else {
-                return state.Starting, nil
-            }
-        } else {
-            return state.Starting, nil
-        }
-    } else {
+    power, err := d.getKamateraServerPower()
+    if err != nil {
         return state.Starting, nil
+    } else if power == "on" {
+        return state.Running, nil
+    } else if power == "off" {
+        return state.Stopped, nil
+    } else {
+        return state.Error, nil
     }
-    // return state.Stopped, nil
+}
+
+type KamateraServerListInfo struct {
+    Id string `json:id`
+    Datacenter string `json:datacenter`
+    Name string `json:name`
+    Power string `json:power`
+}
+
+func (d *Driver) getKamateraServerPower() (string, error) {
+    resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
+        SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
+    if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera servers list")}
+    var servers []KamateraServerListInfo
+    json.Unmarshal(resp.Body(), &servers)
+    serverPower := ""
+    for _, server := range servers {
+        if server.Name == d.MachineName {
+            serverPower = server.Power
+            break
+        }
+    }
+    return serverPower, nil
+}
+
+func (d *Driver) getKamateraServerId() (string, error) {
+    if d.KamateraServerId == "" {
+        resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
+            SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
+        if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera servers list")}
+        var servers []KamateraServerListInfo
+        json.Unmarshal(resp.Body(), &servers)
+        serverId := ""
+        for _, server := range servers {
+            if server.Name == d.MachineName {
+                serverId = server.Id
+                break
+            }
+        }
+        if serverId == "" {
+            return "", errors.Wrap(err, "Failed to find Kamatera server ID")
+        } else {
+            d.KamateraServerId = serverId
+        }
+    }
+    return d.KamateraServerId, nil
 }
 
 func (d *Driver) Remove() error {
-    return errors.New("Remove Kamatera server is not supported yet")
-    /*
-    resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
-        SetHeader("AuthSecret", d.APISecret).SetResult(KamateraServersList{}).
-        Get("https://console.kamatera.com/service/servers")
-    if err != nil {return errors.Wrap(err, "Failed to get Kamatera servers list")}
-    res := resp.Result().(*KamateraServersList)
-    log.Debugf("%s", res.Status)
-    log.Debugf("%s", res.Log)
-    createServerLog = res.Log
-    if res.Status == "complete" {break}
-    if res.Status == "error" {return errors.New("Kamatera create server failed")}
-    if res.Status == "cancelled" {return errors.New("Kamatera create server cancelled")}
-    qs := "confirm=1&force=1"
-    log.Debugf("Remove: %s", qs)
-    payload := strings.NewReader(qs)
-    req, err := http.NewRequest("DELETE", fmt.Sprintf("https://console.kamatera.com/service/server/%s/terminate", d.MachineName), payload)
+    serverId, err := d.getKamateraServerId()
     if err != nil {return err}
-    req.Header.Add("User-Agent", "docker-machine-driver-kamatera/v0.0.0")
-    req.Header.Add("Host", "console.kamatera.com")
-    */
-    //req.Header.Add("Accept", "*/*")
-    /*
-    req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-    req.Header.Add("AuthClientId", d.APIClientID)
-    req.Header.Add("AuthSecret", d.APISecret)
-    r, err := http.DefaultClient.Do(req)
-    if err != nil {return errors.Wrap(err, "Kamatera terminate server request failed")}
-    if r.StatusCode != 200 {
-        log.Debugf("%s", r.Body)
-        return errors.New(fmt.Sprintf("Invalid Kamatera terminate server response status: %d", r.StatusCode))
+    log.Debugf("Removing Kamatera server ID %s", serverId)
+    resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
+        SetFormData(map[string]string{"confirm":"1","force":"1"}).
+        Delete(fmt.Sprintf("https://console.kamatera.com/service/server/%s/terminate", serverId))
+    if err != nil {return err}
+    if resp.StatusCode() != 200 {
+        return errors.New(fmt.Sprintf("Kamatera remove server failed %s", resp.Body()))
     }
-    body, err := ioutil.ReadAll(r.Body)
-    if err != nil {return errors.Wrap(err, "Failed to parse Kamatera terminate server response body")}
-    var TerminateServerResponse []int
-    err = json.Unmarshal(body, &TerminateServerResponse)
-    if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera terminate server")}
-    defer r.Body.Close()
-    log.Debug(TerminateServerResponse)
-    */
+    var removeServerCommandId int
+    err = json.Unmarshal(resp.Body(), &removeServerCommandId)
+    if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera remove server")}
+    log.Infof("Kamatera remove server started, track progress in Kamatera console, command id = %d", removeServerCommandId)
+    return nil
+}
+
+func (d *Driver) kamateraPower(power string) error {
+    serverId, err := d.getKamateraServerId()
+    if err != nil {return err}
+    log.Debugf("Restarting Kamatera server ID %s", serverId)
+    resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
+        SetFormData(map[string]string{"power":power}).
+        Put(fmt.Sprintf("https://console.kamatera.com/service/server/%s/power", serverId))
+    if err != nil {return err}
+    if resp.StatusCode() != 200 {
+        return errors.New(fmt.Sprintf("Kamatera power operation failed: %s", resp.Body()))
+    }
+    var powerServerCommandId int
+    err = json.Unmarshal(resp.Body(), &powerServerCommandId)
+    if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera power operation")}
+    log.Infof("Kamatera power operation started, track progress in Kamatera console, command id = %d", powerServerCommandId)
+    return nil
 }
 
 func (d *Driver) Restart() error {
-    return errors.New("Restart Kamatera server is not supported yet")
+    return d.kamateraPower("restart")
 }
 
 func (d *Driver) Start() error {
-    return errors.New("Start Kamatera server is not supported yet")
+    return d.kamateraPower("on")
 }
 
 func (d *Driver) Stop() error {
-    return errors.New("Stop Kamatera server is not supported yet")
+    return d.kamateraPower("off")
 }
 
 func (d *Driver) Kill() error {
-    return errors.New("Kill Kamatera server is not supported yet")
+    return d.Stop()
 }
