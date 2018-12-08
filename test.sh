@@ -11,7 +11,7 @@ docker-machine start $MACHINE &&\
 docker-machine kill $MACHINE &&\
 docker-machine restart $MACHINE &&\
 [ "$(docker-machine ssh $MACHINE hostname)" == "${MACHINE}" ]
-[ "$?" != "0" && echo ERROR! docker-machine test failed
+[ "$?" != "0" ] && echo ERROR! docker-machine test failed
 
 docker-machine rm -f $MACHINE
 
