@@ -13,7 +13,7 @@ and pass that to `docker-machine create` with the `--kamatera-api-client-id` and
 Download the latest binary for your platform from [Releases](https://github.com/OriHoch/docker-machine-driver-kamatera/releases)
 
 ```
-wget https://github.com/OriHoch/docker-machine-driver-kamatera/releases/download/v0.0.2/docker-machine-driver-kamatera_v0.0.2_linux_amd64.tar.gz
+wget https://github.com/OriHoch/docker-machine-driver-kamatera/releases/download/v0.0.3/docker-machine-driver-kamatera_v0.0.3_linux_amd64.tar.gz
 ```
 
 Extract and install
@@ -71,6 +71,8 @@ docker-machine rm $MACHINE_NAME
 ```
 
 ## Create options
+
+The following options / environment variables are available when running docker-machine create:
 
 - `--kamatera-api-client-id` / `KAMATERA_API_CLIENT_ID`: **required**. Your project-specific access token for the kamatera Cloud API.
 - `--kamatera-api-secret` / `KAMATERA_API_SECRET`: **required**. You Kamatera API secret.
