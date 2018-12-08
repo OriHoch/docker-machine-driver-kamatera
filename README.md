@@ -19,7 +19,7 @@ wget https://github.com/OriHoch/docker-machine-driver-kamatera/releases/download
 Extract and install
 
 ```
-tar -xvf docker-machine-driver-kamatera_v0.0.2_linux_amd64.tar.gz
+tar -xvf docker-machine-driver-kamatera_v0.0.3_linux_amd64.tar.gz
 chmod +x docker-machine-driver-kamatera
 mv docker-machine-driver-kamatera /usr/local/bin/
 ```
