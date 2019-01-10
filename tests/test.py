@@ -15,21 +15,38 @@ print('test machine name = {}'.format(machine_name))
 errors = []
 
 for test_num, test in enumerate([
+    # create
     ('create -d kamatera {machine_name}', {'returncode': 0}),
     ('hello-world', {'returncode': 0}),
+
+    # restart
     ('restart {machine_name}', {'returncode': 0}),
     ('hello-world', {'returncode': 0}),
+
+    # stop
     ('stop {machine_name}', {'returncode': 0}),
-    ('hello-world', {'returncode': False}),
+    ('hello-world', {'returncode': -1}),
+
+    # start
     ('start {machine_name}', {'returncode': 0}),
     ('hello-world', {'returncode': 0}),
+
+    # kill
     ('kill {machine_name}', {'returncode': 0}),
-    ('hello-world', {'returncode': False}),
+    ('hello-world', {'returncode': -1}),
+
+    # restsart after kill
     ('restart {machine_name}', {'returncode': 0}),
     ('hello-world', {'returncode': 0}),
+
+    # ssh
     ('ssh {machine_name} hostname', {'returncode': 0, 'output': machine_name}),
+
+    # remove
     ('rm -y {machine_name}', {'returncode': 0}),
-    ('hello-world', {'returncode': False}),
+    ('hello-world', {'returncode': -1}),
+
+    # ensure removal with --force (optional)
     ('rm -f -y {machine_name}', {})
 ]):
     if test_num > 0:
@@ -62,7 +79,7 @@ for test_num, test in enumerate([
         print('len(output)={}'.format(len(output)))
     for assertion, expected_value in assertions.items():
         if assertion == 'returncode':
-            if (expected_value is False and returncode == 0) or (expected_value is not False and returncode != expected_value):
+            if (expected_value < 0 and returncode == 0) or (expected_value > -1 and returncode != expected_value):
                 errors.append('({}) failed: cmd = "{}", assertion = "{}", expected = "{}", actual = "{}"'.format(test_num, cmd, assertion, expected_value, returncode))
                 print(errors[-1])
         elif assertion == 'output':

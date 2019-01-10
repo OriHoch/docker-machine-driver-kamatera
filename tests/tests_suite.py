@@ -76,11 +76,11 @@ while i < NUM_SINGLE_MACHINE_TESTS_TO_RUN:
     i += 1
     current_batch.append('test{}'.format(i))
     if len(current_batch) >= MAX_PARALLEL_SINGLE_MACHINE_TESTS:
-        for test_name, status in start_tests_batch(current_batch):
+        for test_name, status in start_tests_batch(current_batch).items():
             test_status[test_name] = status
         current_batch = []
 if len(current_batch) > 0:
-    for test_name, status in start_tests_batch(current_batch):
+    for test_name, status in start_tests_batch(current_batch).items():
         test_status[test_name] = status
 
 success_tests = [test_name for test_name, status in test_status.items() if status == 'OK']

@@ -15,3 +15,5 @@
 vendor
 docker-machine-driver-kamatera
 .idea
+
+test_results
