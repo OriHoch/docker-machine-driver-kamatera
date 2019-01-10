@@ -49,7 +49,8 @@ script:
     ( docker pull kamatera/kamatera-docker-machine-driver-tests || true ) &&\
     docker build --cache-from kamatera/kamatera-docker-machine-driver-tests -t tests tests/
   - |
-    docker run -v /var/run/docker.sock:/var/run/docker.sock \
+    docker run -t \
+               -v /var/run/docker.sock:/var/run/docker.sock \
                -v "`pwd`/test_results/kamatera-suite-1/:/test_results/" \
                -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET \
                -e "KAMATERA_HOST_PATH=`pwd`/test_results/kamatera-suite-1" \
