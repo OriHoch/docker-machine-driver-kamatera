@@ -13,8 +13,17 @@
 #     * add the secure: "<encrypted token>" to the travis.yml file as a key
 #       below the api_key
 language: go
+
+sudo: required
+
 go:
   - stable
+
+env:
+  global:
+  - TRAVIS_CI_OPERATOR=1
+  - secure: "TT2u22DqivTmPQwWSc1oDR+MPzz2UfylvMZTD3zid8TON+8s//n6PjxJLUBA+YGUbvXUYWEBbqO/GIiX6SglgsPz8QzH2plTSL1AOmABdRK47NNtjaMlmOPFGx20mtwYRipN08DhrSlSO8FvjEjaGEyKzeSRAabtIgJMEb94oFrkK1eOOxCBSt7QF2HFpEdJGncwFMQtFytjZG16aU1o9n/jVec25VoI/VtmmQ8owzibTUVJN0GPO44bSLXmntb0Qylic7fLmXEVDlxcE2N7dHd4tZTIHubAT/iNcJyY5JDjvlv9squsfllh3SOtueJiSkZarJd8/Jf9fHtG09EDVEP2iqqMr2ThZaUDEJxJXrKKrKqHW+CSZGv0e2fYtNcD5F3YFfBbzEoiO2qPqIxdJnxOVZ/Xyre3210eGQhnwTt0bEd3WhBD2o9fZKStqPZhSDLUsKbl/LPj1d/FdnnYabpbmbmthV1X74QPRVwDfahr1BpI6+qLVWCXeMmWWcqoFDPaAXDDkSFPL2FsA13OxItUKkw3hBK1toXhW4Y3yVZnm0z8rNpVoMXXD5WmcZpI0xfSco+a560cvVfcL4Wrd4bWzzID/I3U+pJkF5S2auFdy/u4klK0PsALH3PhJIJGFZed8AEOScM0cplyYU4I/29VP6xIfr0qPOlCMf7c01U="
+  - secure: "yn7xw04Za9RFJSjRO4GNJJeVpVepnBFBTBk8iTn1jVDZCWb5RHEQUvOhsv1LY7D5NVODR94CGo8g49ZfWsJUujfStbkKzPc9R1DN8b4dmVuUKqjSHplu0MkGV74xlidyBFWQye7G7FI+WrUbo7/UUdQ+0IJyP4EO5LihPNDtI6zvh6oP2OF+cdXz/LsZBgn03k0Qn6amA2k3R7AoT85MuYSFcJ8r5307LbPZhaJVbeK36XkzGqBbg1v6KjVfoBPc2Qa6nGnMGykr1Zued4B52ZQGc7jFVKsJGPbFJXhVX4n5Uk8gnN8PS52zMp1loSS+5wC2My4Tt4A2JjLDUXQ7xYj2d+sPythwVS1EnxE326UhwvdO3VL0r8LEx5Noi9z2ztg7M/xTU4E/gBRY/QvE96Vsd8A0XBaUwJjxjCLTLsBm9MmS23RrqJQMIU7f0RExAGIjV9/PLX7pRxEHsPwJj25u++VH/t4QqdBLHY6ttI5MmUmBJqpnXCbTFVkGGjg0koyy3F4prDbdqY2Xh+ABIpqgCL1Ti/DJAfPXIU9jYuLB7imjw4CwslZQVy9yzy87EwDHrrYUVUH+wkT5PkCDPpWxlBzzJQo8NWQ39MWzdGLSHABbue2veEPdXnb712hgOCSH03pV49j/eZlQyorJSRBN9DvJIef42Dwp3pqZ15k="
 
 services:
   - docker
@@ -30,17 +39,25 @@ install:
   - sudo cp docker-machine-driver-kamatera /usr/local/bin/docker-machine-driver-kamatera
   - curl -L https://github.com/docker/machine/releases/download/v0.16.0/docker-machine-$(uname -s)-$(uname -m) >/tmp/docker-machine
   - sudo install /tmp/docker-machine /usr/local/bin/docker-machine
+  - curl -L https://raw.githubusercontent.com/OriHoch/travis-ci-operator/master/travis_ci_operator.sh > $HOME/bin/travis_ci_operator.sh
+  - bash $HOME/bin/travis_ci_operator.sh init
+  - travis_ci_operator.sh docker-login
 
 script:
   - cp -f `which docker-machine-driver-kamatera` tests/
-  - docker build -t tests tests/
-  - docker run -it -e TESTS_DEBUG=1 -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET tests
   - |
-    docker run -it -v /var/run/docker.sock:/var/run/docker.sock \
-                   -v "`pwd`/test_results/kamatera-suite-1/:/test_results/" \
-                   -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET \
-                   -e "KAMATERA_HOST_PATH=`pwd`/test_results/kamatera-suite-1" \
-                   -e SUITE_RUN_TITLE=kamatera-suite-1 tests tests_suite.py
+    ( docker pull kamatera/kamatera-docker-machine-driver-tests || true ) &&\
+    docker build --cache-from kamatera/kamatera-docker-machine-driver-tests -t tests tests/
+  - |
+    docker run -v /var/run/docker.sock:/var/run/docker.sock \
+               -v "`pwd`/test_results/kamatera-suite-1/:/test_results/" \
+               -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET \
+               -e "KAMATERA_HOST_PATH=`pwd`/test_results/kamatera-suite-1" \
+               -e SUITE_RUN_TITLE=kamatera-suite-1 \
+               -e NUM_SINGLE_MACHINE_TESTS_TO_RUN=10 \
+               tests tests_suite.py
+  - docker tag tests kamatera/kamatera-docker-machine-driver-tests
+  - docker push kamatera/kamatera-docker-machine-driver-tests
 
 before_deploy:
   # Create binaries for many OSs and architures as tarballs.
