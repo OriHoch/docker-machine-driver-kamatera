@@ -16,6 +16,9 @@ language: go
 go:
   - stable
 
+services:
+  - docker
+
 before_install:
   # Install Go Dep
   - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
@@ -29,7 +32,15 @@ install:
   - sudo install /tmp/docker-machine /usr/local/bin/docker-machine
 
 script:
-  - bash ./test.sh
+  - cp -f `which docker-machine-driver-kamatera` tests/
+  - docker build -t tests tests/
+  - docker run -it -e TESTS_DEBUG=1 -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET tests
+  - |
+    docker run -it -v /var/run/docker.sock:/var/run/docker.sock \
+                   -v "`pwd`/test_results/kamatera-suite-1/:/test_results/" \
+                   -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET \
+                   -e "KAMATERA_HOST_PATH=`pwd`/test_results/kamatera-suite-1" \
+                   -e SUITE_RUN_TITLE=kamatera-suite-1 tests tests_suite.py
 
 before_deploy:
   # Create binaries for many OSs and architures as tarballs.
