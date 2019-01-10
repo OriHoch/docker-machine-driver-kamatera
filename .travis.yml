@@ -24,6 +24,7 @@ env:
   - TRAVIS_CI_OPERATOR=1
   - secure: "TT2u22DqivTmPQwWSc1oDR+MPzz2UfylvMZTD3zid8TON+8s//n6PjxJLUBA+YGUbvXUYWEBbqO/GIiX6SglgsPz8QzH2plTSL1AOmABdRK47NNtjaMlmOPFGx20mtwYRipN08DhrSlSO8FvjEjaGEyKzeSRAabtIgJMEb94oFrkK1eOOxCBSt7QF2HFpEdJGncwFMQtFytjZG16aU1o9n/jVec25VoI/VtmmQ8owzibTUVJN0GPO44bSLXmntb0Qylic7fLmXEVDlxcE2N7dHd4tZTIHubAT/iNcJyY5JDjvlv9squsfllh3SOtueJiSkZarJd8/Jf9fHtG09EDVEP2iqqMr2ThZaUDEJxJXrKKrKqHW+CSZGv0e2fYtNcD5F3YFfBbzEoiO2qPqIxdJnxOVZ/Xyre3210eGQhnwTt0bEd3WhBD2o9fZKStqPZhSDLUsKbl/LPj1d/FdnnYabpbmbmthV1X74QPRVwDfahr1BpI6+qLVWCXeMmWWcqoFDPaAXDDkSFPL2FsA13OxItUKkw3hBK1toXhW4Y3yVZnm0z8rNpVoMXXD5WmcZpI0xfSco+a560cvVfcL4Wrd4bWzzID/I3U+pJkF5S2auFdy/u4klK0PsALH3PhJIJGFZed8AEOScM0cplyYU4I/29VP6xIfr0qPOlCMf7c01U="
   - secure: "yn7xw04Za9RFJSjRO4GNJJeVpVepnBFBTBk8iTn1jVDZCWb5RHEQUvOhsv1LY7D5NVODR94CGo8g49ZfWsJUujfStbkKzPc9R1DN8b4dmVuUKqjSHplu0MkGV74xlidyBFWQye7G7FI+WrUbo7/UUdQ+0IJyP4EO5LihPNDtI6zvh6oP2OF+cdXz/LsZBgn03k0Qn6amA2k3R7AoT85MuYSFcJ8r5307LbPZhaJVbeK36XkzGqBbg1v6KjVfoBPc2Qa6nGnMGykr1Zued4B52ZQGc7jFVKsJGPbFJXhVX4n5Uk8gnN8PS52zMp1loSS+5wC2My4Tt4A2JjLDUXQ7xYj2d+sPythwVS1EnxE326UhwvdO3VL0r8LEx5Noi9z2ztg7M/xTU4E/gBRY/QvE96Vsd8A0XBaUwJjxjCLTLsBm9MmS23RrqJQMIU7f0RExAGIjV9/PLX7pRxEHsPwJj25u++VH/t4QqdBLHY6ttI5MmUmBJqpnXCbTFVkGGjg0koyy3F4prDbdqY2Xh+ABIpqgCL1Ti/DJAfPXIU9jYuLB7imjw4CwslZQVy9yzy87EwDHrrYUVUH+wkT5PkCDPpWxlBzzJQo8NWQ39MWzdGLSHABbue2veEPdXnb712hgOCSH03pV49j/eZlQyorJSRBN9DvJIef42Dwp3pqZ15k="
+  - ARTIFACTS_PATHS="test_results/ tests/"
 
 services:
   - docker
@@ -58,9 +59,10 @@ script:
                -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET \
                -e "KAMATERA_HOST_PATH=`pwd`/test_results/kamatera-suite-1" \
                -e SUITE_RUN_TITLE=kamatera-suite-1 \
-               -e NUM_SINGLE_MACHINE_TESTS_TO_RUN=10 \
+               -e NUM_SINGLE_MACHINE_TESTS_TO_RUN=20 \
                tests tests_suite.py
-  - artifacts upload test_results/ tests/docker-machine-driver-kamatera
+  - sudo chown -R $USER test_results/ tests/
+  - artifacts upload
   - docker tag tests kamatera/kamatera-docker-machine-driver-tests
   - docker push kamatera/kamatera-docker-machine-driver-tests
 

@@ -11,6 +11,7 @@ import csv
 
 
 NUM_SINGLE_MACHINE_TESTS_TO_RUN = int(os.environ.get('NUM_SINGLE_MACHINE_TESTS_TO_RUN', '2'))
+MAX_PARALLEL_SINGLE_MACHINE_TESTS = int(os.environ.get('MAX_PARALLEL_SINGLE_MACHINE_TESTS', '10'))
 
 
 if not os.environ.get('KAMATERA_API_CLIENT_ID') or not os.environ.get('KAMATERA_API_SECRET'):
@@ -22,48 +23,65 @@ if not os.environ.get('KAMATERA_HOST_PATH') or not os.environ.get('SUITE_RUN_TIT
     print('Missing KAMATERA_HOST_PATH and SUITE_RUN_TITLE environment variables')
     exit(1)
 
+
 host_path = os.environ['KAMATERA_HOST_PATH']
 local_path = '/test_results'
 suite_run_title = os.environ['SUITE_RUN_TITLE']
 
+
 print('Running tests suite {}'.format(suite_run_title))
 print(' -- NUM_SINGLE_MACHINE_TESTS_TO_RUN={}'.format(NUM_SINGLE_MACHINE_TESTS_TO_RUN))
+print(' -- MAX_PARALLEL_SINGLE_MACHINE_TESTS={}'.format(MAX_PARALLEL_SINGLE_MACHINE_TESTS))
 print(' -- host_path={}'.format(host_path))
 print(' -- local_path={}'.format(local_path))
 
+
+def start_tests_batch(test_names):
+    print('Starting test batch: {}'.format(test_names))
+    for i, test_name in enumerate(test_names):
+        print('Starting {} --- {} / {} in current batch'.format(test_name, i+1, len(test_names)))
+        subprocess.check_call("""
+                docker run --rm --name {suite_run_title}-{test_name} -d \
+                    -v {kamatera_host_path}/{test_name}/:/kamatera/ \
+                    -e TESTS_DEBUG=1 \
+                    -e KAMATERA_API_CLIENT_ID \
+                    -e KAMATERA_API_SECRET \
+                    tests
+            """.format(test_name=test_name, kamatera_host_path=host_path, suite_run_title=suite_run_title),
+                              shell=True)
+    print('Waiting for test batch to complete')
+    batch_test_status = {}
+    while len(batch_test_status) != len(test_names):
+        time.sleep(10)
+        print('.')
+        for test_name in test_names:
+            if test_name in batch_test_status: continue
+            status_path = '{}/{}/status'.format(local_path, test_name)
+            if os.path.exists(status_path):
+                with open(status_path) as f:
+                    status = f.read().strip()
+                if status in ['OK', 'ERROR']:
+                    batch_test_status[test_name] = status
+                    print('{}: {}'.format(test_name, status))
+                    print('completed tests in current batch: {} / {}'.format(len(batch_test_status), len(test_names)))
+                elif status != '':
+                    raise Exception('Invalid status: {}'.format(status))
+    return batch_test_status
+
+
 i = 0
+test_status = {}
+current_batch = []
 while i < NUM_SINGLE_MACHINE_TESTS_TO_RUN:
     i += 1
-    print('Running test {} / {}'.format(i, NUM_SINGLE_MACHINE_TESTS_TO_RUN))
-    subprocess.check_call("""
-        docker run --rm --name {suite_run_title}-test{i} -d \
-            -v {kamatera_host_path}/test{i}/:/kamatera/ \
-            -e TESTS_DEBUG=1 \
-            -e KAMATERA_API_CLIENT_ID \
-            -e KAMATERA_API_SECRET \
-            tests
-    """.format(i=i, kamatera_host_path=host_path, suite_run_title=suite_run_title), shell=True)
-
-print("Waiting for tests to complete...")
-
-test_status = {}
-while len(test_status) != NUM_SINGLE_MACHINE_TESTS_TO_RUN:
-    time.sleep(5)
-    print('.')
-    i = 0
-    while i < NUM_SINGLE_MACHINE_TESTS_TO_RUN:
-        i += 1
-        if 'test{}'.format(i) in test_status: continue
-        status_path = '{}/test{}/status'.format(local_path, i)
-        if os.path.exists(status_path):
-            with open(status_path) as f:
-                status = f.read().strip()
-            if status in ['OK', 'ERROR']:
-                test_status['test{}'.format(i)] = status
-                print('test{}: {}'.format(i, status))
-                print('completed tests: {} / {}'.format(len(test_status), NUM_SINGLE_MACHINE_TESTS_TO_RUN))
-            elif status != '':
-                raise Exception('Invalid status: {}'.format(status))
+    current_batch.append('test{}'.format(i))
+    if len(current_batch) >= MAX_PARALLEL_SINGLE_MACHINE_TESTS:
+        for test_name, status in start_tests_batch(current_batch):
+            test_status[test_name] = status
+        current_batch = []
+if len(current_batch) > 0:
+    for test_name, status in start_tests_batch(current_batch):
+        test_status[test_name] = status
 
 success_tests = [test_name for test_name, status in test_status.items() if status == 'OK']
 errored_tests = [test_name for test_name, status in test_status.items() if status == 'ERROR']
