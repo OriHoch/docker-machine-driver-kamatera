@@ -54,7 +54,7 @@ const (
 	defaultCpu  = "1B"
 	defaultRam = 512
 	defaultDiskSize = 10
-	defaultImage = "ubuntu_server_16.04_64-bit"
+	defaultImage = "ubuntu_server_18.04_64-bit"
 
 	flagAPIClientID = "kamatera-api-client-id"
 	flagAPISecret = "kamatera-api-secret"
@@ -202,6 +202,17 @@ type KamateraServerCommandInfo struct {
     Log string `json:log`
 }
 
+type KamateraPowerOperationInfo struct {
+    Status string `json:status`
+}
+
+type KamateraServerListInfo struct {
+    Id string `json:id`
+    Datacenter string `json:datacenter`
+    Name string `json:name`
+    Power string `json:power`
+}
+
 func IsStringInArray(str string, arr []string) bool {
     for _, n := range arr {if str == n {return true}}; return false
 }
@@ -215,28 +226,41 @@ func (d *Driver) PreCreateCheck() error {
         log.Debugf("Skipping pre-create checks, continuing from existing command id = %d", d.CreateServerCommandId)
         return nil
     }
-    resp, err := resty.R().
-        SetHeader("AuthClientId", d.APIClientID).
-        SetHeader("AuthSecret", d.APISecret).
-        SetResult(KamateraServerOptions{}).
-        Get("https://console.kamatera.com/service/server")
-    if err != nil {return err}
-    res := resp.Result().(*KamateraServerOptions)
-    d.DatacenterName = res.Datacenters[d.Datacenter]
-    if d.DatacenterName == "" {return errors.New("Invalid datacenter")}
-    if ! IsStringInArray(d.Cpu, res.Cpu) {return errors.New("Invalid CPU")}
-    if ! IsIntInArray(d.Ram, res.Ram) {return errors.New("Invalid ram")}
-    if ! IsIntInArray(d.DiskSize, res.Disk) {return errors.New("Invalid disk size")}
-    if ! IsStringInArray(d.Billing, res.Billing) {return errors.New("Invalid billing")}
-    diskImages := res.DiskImages[d.Datacenter]
-    for _, diskImage := range diskImages {
-        if diskImage.Description == d.Image {
-            d.DiskImageId = diskImage.Id
-            break
+    i := 0
+    for {
+        if i > 0 {time.Sleep(time.Duration(i * 6000) * time.Millisecond)}
+        i += 1
+        resp, err := resty.R().
+            SetHeader("AuthClientId", d.APIClientID).
+            SetHeader("AuthSecret", d.APISecret).
+            SetResult(KamateraServerOptions{}).
+            Get("https://console.kamatera.com/service/server")
+        if err != nil {return err}
+        if resp.StatusCode() != 200 {
+            if i >= 10 {
+                return errors.New(fmt.Sprintf("Invalid status code: %d", resp.StatusCode()))
+            } else {
+                log.Debugf("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
+                continue
+            }
         }
+        res := resp.Result().(*KamateraServerOptions)
+        d.DatacenterName = res.Datacenters[d.Datacenter]
+        if d.DatacenterName == "" {return errors.New("Invalid datacenter")}
+        if ! IsStringInArray(d.Cpu, res.Cpu) {return errors.New("Invalid CPU")}
+        if ! IsIntInArray(d.Ram, res.Ram) {return errors.New("Invalid ram")}
+        if ! IsIntInArray(d.DiskSize, res.Disk) {return errors.New("Invalid disk size")}
+        if ! IsStringInArray(d.Billing, res.Billing) {return errors.New("Invalid billing")}
+        diskImages := res.DiskImages[d.Datacenter]
+        for _, diskImage := range diskImages {
+            if diskImage.Description == d.Image {
+                d.DiskImageId = diskImage.Id
+                break
+            }
+        }
+        if d.DiskImageId == "" {return errors.New("Invalid disk image")}
+        return nil
     }
-    if d.DiskImageId == "" {return errors.New("Invalid disk image")}
-    return nil
 }
 
 func (d *Driver) Create() error {
@@ -251,28 +275,62 @@ func (d *Driver) Create() error {
         if err != nil {return err}
         d.Password = _password
         qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%s&billing=%s&disk_size_0=%s&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0", d.Datacenter, d.MachineName, d.Password, d.Cpu, fmt.Sprintf("%d", d.Ram), d.Billing, fmt.Sprintf("%d", d.DiskSize), strings.Replace(d.DiskImageId, ":", "%3A", -1), "wan")
+        log.Debugf("https://console.kamatera.com/service/server?%s", qs)
         payload := strings.NewReader(qs)
-        req, err := http.NewRequest("POST", "https://console.kamatera.com/service/server", payload)
-        if err != nil {return err}
-        req.Header.Add("User-Agent", "docker-machine-driver-kamatera/v0.0.0")
-        req.Header.Add("Host", "console.kamatera.com")
-        req.Header.Add("Accept", "*/*")
-        req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-        req.Header.Add("AuthClientId", d.APIClientID)
-        req.Header.Add("AuthSecret", d.APISecret)
-        r, err := http.DefaultClient.Do(req)
-        if err != nil {return errors.Wrap(err, "Kamatera create server request failed")}
-        if r.StatusCode != 200 {
-            log.Debugf("%s", r.Body)
-            return errors.New(fmt.Sprintf("Invalid Kamatera create server response status: %d", r.StatusCode))
+        i := 0
+        for {
+            if i > 0 {
+                log.Debugf("Retry %d / 10", i)
+                time.Sleep(time.Duration(i * 6000) * time.Millisecond)
+            }
+            i += 1
+            req, err := http.NewRequest("POST", "https://console.kamatera.com/service/server", payload)
+            req.Header.Add("User-Agent", "docker-machine-driver-kamatera/v0.0.0")
+            req.Header.Add("Host", "console.kamatera.com")
+            req.Header.Add("Accept", "*/*")
+            req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+            req.Header.Add("AuthClientId", d.APIClientID)
+            req.Header.Add("AuthSecret", d.APISecret)
+            r, err := http.DefaultClient.Do(req)
+            if err != nil {
+                if i >= 10 {
+                    return errors.Wrap(err, "Unexpected error")
+                } else {
+                    log.Debugf("Unexpected error: %s", err)
+                    continue
+                }
+            }
+            if r.StatusCode != 200 {
+                if i >= 10 {
+                    return errors.New(fmt.Sprintf("Invalid Kamatera create server response status: %d", r.StatusCode))
+                } else {
+                    log.Debugf("Got invalid status code: %d", r.StatusCode)
+                    continue
+                }
+            }
+            body, err := ioutil.ReadAll(r.Body)
+            if err != nil {
+                if i >= 10 {
+                    return errors.Wrap(err, "Failed to parse Kamatera create server response body")
+                } else {
+                    log.Debug("Failed to parse Kamatera create server response body")
+                    continue
+                }
+            }
+            var CreateServerResponse []int
+            err = json.Unmarshal(body, &CreateServerResponse)
+            if err != nil {
+                if i >= 10 {
+                    return errors.Wrap(err, "Invalid JSON response from Kamatera create server")
+                } else {
+                    log.Debug("Failed to parse Kamatera create server response body")
+                    continue
+                }
+            }
+            defer r.Body.Close()
+            d.CreateServerCommandId = CreateServerResponse[0]
+            break
         }
-        body, err := ioutil.ReadAll(r.Body)
-        if err != nil {return errors.Wrap(err, "Failed to parse Kamatera create server response body")}
-        var CreateServerResponse []int
-        err = json.Unmarshal(body, &CreateServerResponse)
-        if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera create server")}
-        defer r.Body.Close()
-        d.CreateServerCommandId = CreateServerResponse[0]
     }
     log.Infof("Waiting for Kamatera create server command to complete...")
     log.Infof("You can track progress in the Kamatera console web-ui (Command ID = %d)", d.CreateServerCommandId)
@@ -282,14 +340,18 @@ func (d *Driver) Create() error {
             SetHeader("AuthSecret", d.APISecret).SetResult(KamateraServerCommandInfo{}).
             Get(fmt.Sprintf("https://console.kamatera.com/service/queue/%d", d.CreateServerCommandId))
         if err != nil {return errors.Wrap(err, fmt.Sprintf("Failed to get Kamatera command info (%d)", d.CreateServerCommandId))}
-        res := resp.Result().(*KamateraServerCommandInfo)
-        log.Debugf("%s", res.Status)
-        log.Debugf("%s", res.Log)
-        createServerLog = res.Log
-        if res.Status == "complete" {break}
-        if res.Status == "error" {return errors.New("Kamatera create server failed")}
-        if res.Status == "cancelled" {return errors.New("Kamatera create server cancelled")}
-		time.Sleep(1 * time.Second)
+        if resp.StatusCode() == 200 {
+            res := resp.Result().(*KamateraServerCommandInfo)
+            log.Debugf("%s", res.Status)
+            log.Debugf("%s", res.Log)
+            createServerLog = res.Log
+            if res.Status == "complete" {break}
+            if res.Status == "error" {return errors.New("Kamatera create server failed")}
+            if res.Status == "cancelled" {return errors.New("Kamatera create server cancelled")}
+		} else {
+            log.Debugf("Got invalid status code: %d, retrying...", resp.StatusCode)
+        }
+        time.Sleep(1 * time.Second)
 	}
 	log.Infof("Kamatera create server command completed successfully")
 	var pattern = regexp.MustCompile(` ([0-9]+.[0-9]+.[0-9]+.[0-9]+) `)
@@ -317,7 +379,7 @@ func (d *Driver) Create() error {
         },
         HostKeyCallback: ssh.InsecureIgnoreHostKey(),
     }
-    log.Debugf("Copying SSH key to the server")
+    log.Debugf("Copying SSH key to the server and performing initialization")
     for {
         time.Sleep(1 * time.Second)
         client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", d.IPAddress), config)
@@ -345,7 +407,9 @@ func (d *Driver) GetURL() (string, error) {
 	if err := drivers.MustBeRunning(d); err != nil {return "", errors.Wrap(err, "could not execute drivers.MustBeRunning")}
 	ip, err := d.GetIP()
 	if err != nil {return "", errors.Wrap(err, "could not get IP")}
-	return fmt.Sprintf("tcp://%s", net.JoinHostPort(ip, "2376")), nil
+	url := fmt.Sprintf("tcp://%s", net.JoinHostPort(ip, "2376"))
+	log.Debug(url)
+	return url, nil
 }
 
 func (d *Driver) GetState() (state.State, error) {
@@ -361,27 +425,33 @@ func (d *Driver) GetState() (state.State, error) {
     }
 }
 
-type KamateraServerListInfo struct {
-    Id string `json:id`
-    Datacenter string `json:datacenter`
-    Name string `json:name`
-    Power string `json:power`
-}
-
 func (d *Driver) getKamateraServerPower() (string, error) {
-    resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
-        SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
-    if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera servers list")}
-    var servers []KamateraServerListInfo
-    json.Unmarshal(resp.Body(), &servers)
-    serverPower := ""
-    for _, server := range servers {
-        if server.Name == d.MachineName {
-            serverPower = server.Power
-            break
+    i := 0
+    for {
+        if i > 0 {time.Sleep(2000 + time.Duration(i * 3000) * time.Millisecond)}
+        i += 1
+        resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
+            SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
+        if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera server power")}
+        if resp.StatusCode() != 200 {
+            if i >= 10 {
+                return "", errors.New(fmt.Sprintf("Invalid Kamatera server power status: %d", resp.StatusCode()))
+            } else {
+                log.Debugf("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
+                continue
+            }
         }
+        var servers []KamateraServerListInfo
+        json.Unmarshal(resp.Body(), &servers)
+        serverPower := ""
+        for _, server := range servers {
+            if server.Name == d.MachineName {
+                serverPower = server.Power
+                break
+            }
+        }
+        return serverPower, nil
     }
-    return serverPower, nil
 }
 
 func (d *Driver) getKamateraServerId() (string, error) {
@@ -428,7 +498,7 @@ func (d *Driver) Remove() error {
 func (d *Driver) kamateraPower(power string) error {
     serverId, err := d.getKamateraServerId()
     if err != nil {return err}
-    log.Debugf("Restarting Kamatera server ID %s", serverId)
+    log.Debugf("Initiating power operation %s on Kamatera server ID %s", power, serverId)
     resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
         SetFormData(map[string]string{"power":power}).
         Put(fmt.Sprintf("https://console.kamatera.com/service/server/%s/power", serverId))
@@ -436,10 +506,25 @@ func (d *Driver) kamateraPower(power string) error {
     if resp.StatusCode() != 200 {
         return errors.New(fmt.Sprintf("Kamatera power operation failed: %s", resp.Body()))
     }
-    var powerServerCommandId int
-    err = json.Unmarshal(resp.Body(), &powerServerCommandId)
+    var powerOperationCommandId int
+    err = json.Unmarshal(resp.Body(), &powerOperationCommandId)
     if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera power operation")}
-    log.Infof("Kamatera power operation started, track progress in Kamatera console, command id = %d", powerServerCommandId)
+    log.Info("Waiting for Kamatera power operation to complete")
+    log.Infof("track progress in Kamatera console, command id = %d", powerOperationCommandId)
+    for {
+        resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
+            SetHeader("AuthSecret", d.APISecret).SetResult(KamateraPowerOperationInfo{}).
+            Get(fmt.Sprintf("https://console.kamatera.com/service/queue/%d", powerOperationCommandId))
+        if err != nil {return errors.Wrap(err, fmt.Sprintf("Failed to get Kamatera command info (%d)", powerOperationCommandId))}
+        res := resp.Result().(*KamateraPowerOperationInfo)
+        log.Debugf("%s", res.Status)
+        if res.Status == "complete" {break}
+        if res.Status == "error" {return errors.New("Kamatera power operation failed")}
+        if res.Status == "cancelled" {return errors.New("Kamatera power operation cancelled")}
+        time.Sleep(1 * time.Second)
+	}
+	time.Sleep(2 * time.Second)
+	log.Infof("Kamatera power operation completed successfully")
     return nil
 }
 
