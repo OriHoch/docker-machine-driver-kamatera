@@ -28,6 +28,9 @@ env:
 services:
   - docker
 
+addons:
+  artifacts: true
+
 before_install:
   # Install Go Dep
   - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
@@ -44,7 +47,7 @@ install:
   - travis_ci_operator.sh docker-login
 
 script:
-  - cp -f `which docker-machine-driver-kamatera` tests/
+  - cp -f `which docker-machine-driver-kamatera` tests/docker-machine-driver-kamatera
   - |
     ( docker pull kamatera/kamatera-docker-machine-driver-tests || true ) &&\
     docker build --cache-from kamatera/kamatera-docker-machine-driver-tests -t tests tests/
@@ -57,6 +60,7 @@ script:
                -e SUITE_RUN_TITLE=kamatera-suite-1 \
                -e NUM_SINGLE_MACHINE_TESTS_TO_RUN=10 \
                tests tests_suite.py
+  - artifacts upload test_results/ tests/docker-machine-driver-kamatera
   - docker tag tests kamatera/kamatera-docker-machine-driver-tests
   - docker push kamatera/kamatera-docker-machine-driver-tests
 
