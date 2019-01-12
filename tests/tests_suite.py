@@ -12,6 +12,12 @@ import csv
 
 NUM_SINGLE_MACHINE_TESTS_TO_RUN = int(os.environ.get('NUM_SINGLE_MACHINE_TESTS_TO_RUN', '2'))
 MAX_PARALLEL_SINGLE_MACHINE_TESTS = int(os.environ.get('MAX_PARALLEL_SINGLE_MACHINE_TESTS', '10'))
+TEST_HOST_DOCKERDIR = os.environ.get('TEST_HOST_DOCKERDIR', '')
+
+
+TEST_EXISTING_MACHINES = os.environ.get('TEST_EXISTING_MACHINES')
+if TEST_EXISTING_MACHINES:
+    TEST_EXISTING_MACHINES = TEST_EXISTING_MACHINES.split(',')
 
 
 if not os.environ.get('KAMATERA_API_CLIENT_ID') or not os.environ.get('KAMATERA_API_SECRET'):
@@ -36,18 +42,27 @@ print(' -- host_path={}'.format(host_path))
 print(' -- local_path={}'.format(local_path))
 
 
-def start_tests_batch(test_names):
+def start_tests_batch(test_names, machine_names=None):
     print('Starting test batch: {}'.format(test_names))
     for i, test_name in enumerate(test_names):
         print('Starting {} --- {} / {} in current batch'.format(test_name, i+1, len(test_names)))
+        if machine_names:
+            extra_args = ' -e KAMATERA_TEST_CREATED_MACHINE_NAME={} '.format(machine_names[i])
+        else:
+            extra_args = ''
+        if TEST_HOST_DOCKERDIR:
+            extra_args += ' -v {host_dockerdir}:/root/.docker -v {host_dockerdir}:{host_dockerdir} '.format(
+                host_dockerdir=TEST_HOST_DOCKERDIR
+            )
         subprocess.check_call("""
                 docker run --rm --name {suite_run_title}-{test_name} -d \
                     -v {kamatera_host_path}/{test_name}/:/kamatera/ \
-                    -e TESTS_DEBUG=1 \
                     -e KAMATERA_API_CLIENT_ID \
                     -e KAMATERA_API_SECRET \
+                    {extra_args} \
                     tests
-            """.format(test_name=test_name, kamatera_host_path=host_path, suite_run_title=suite_run_title),
+            """.format(test_name=test_name, kamatera_host_path=host_path, suite_run_title=suite_run_title,
+                       extra_args=extra_args),
                               shell=True)
     print('Waiting for test batch to complete')
     batch_test_status = {}
@@ -69,19 +84,26 @@ def start_tests_batch(test_names):
     return batch_test_status
 
 
-i = 0
 test_status = {}
-current_batch = []
-while i < NUM_SINGLE_MACHINE_TESTS_TO_RUN:
-    i += 1
-    current_batch.append('test{}'.format(i))
-    if len(current_batch) >= MAX_PARALLEL_SINGLE_MACHINE_TESTS:
+
+
+if TEST_EXISTING_MACHINES:
+    test_names = ['test{}'.format(i) for i, machine_name in enumerate(TEST_EXISTING_MACHINES)]
+    for test_name, status in start_tests_batch(test_names, TEST_EXISTING_MACHINES).items():
+        test_status[test_name] = status
+else:
+    i = 0
+    current_batch = []
+    while i < NUM_SINGLE_MACHINE_TESTS_TO_RUN:
+        i += 1
+        current_batch.append('test{}'.format(i))
+        if len(current_batch) >= MAX_PARALLEL_SINGLE_MACHINE_TESTS:
+            for test_name, status in start_tests_batch(current_batch).items():
+                test_status[test_name] = status
+            current_batch = []
+    if len(current_batch) > 0:
         for test_name, status in start_tests_batch(current_batch).items():
             test_status[test_name] = status
-        current_batch = []
-if len(current_batch) > 0:
-    for test_name, status in start_tests_batch(current_batch).items():
-        test_status[test_name] = status
 
 success_tests = [test_name for test_name, status in test_status.items() if status == 'OK']
 errored_tests = [test_name for test_name, status in test_status.items() if status == 'ERROR']

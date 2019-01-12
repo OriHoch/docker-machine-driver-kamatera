@@ -56,11 +56,17 @@ Copy the binary to the tests directory
 cp -f `which docker-machine-driver-kamatera` tests/
 ```
 
-Build and run a test
+Build and run a test using Docker
 
 ```
 docker build -t tests tests/ &&\
 docker run -it -e TESTS_DEBUG=1 -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET tests
+```
+
+Run a test using Python
+
+```
+python3.6 tests/test.py
 ```
 
 Run multiple tests and aggregate statistics and results
@@ -71,6 +77,10 @@ RESULTS_DIRECTORY=`pwd`/test_results
 # a unique title for this test suite run
 export SUITE_RUN_TITLE="kamatera-suite-1"
 
+# test settings
+export NUM_SINGLE_MACHINE_TESTS_TO_RUN=50
+export MAX_PARALLEL_SINGLE_MACHINE_TESTS=10
+
 docker build -t tests tests/ &&\
 docker run -it \
            -v /var/run/docker.sock:/var/run/docker.sock \
@@ -78,7 +88,27 @@ docker run -it \
            -e KAMATERA_API_CLIENT_ID \
            -e KAMATERA_API_SECRET \
            -e "KAMATERA_HOST_PATH=${RESULTS_DIRECTORY}/${SUITE_RUN_TITLE}" \
-           -e SUITE_RUN_TITLE \
+           -e SUITE_RUN_TITLE -e NUM_SINGLE_MACHINE_TESTS_TO_RUN -e MAX_PARALLEL_SINGLE_MACHINE_TESTS \
+           tests tests_suite.py
+```
+
+Test using pre-created machines
+
+```
+export TEST_EXISTING_MACHINES="comma-separated-list-of-machine-names"
+
+docker build -t tests tests/ &&\
+docker run -it \
+           -v /var/run/docker.sock:/var/run/docker.sock \
+           -v "${HOME}/.docker:${HOME}/.docker" \
+           -v "${HOME}/.docker:/root/.docker" \
+           -v "${RESULTS_DIRECTORY}/${SUITE_RUN_TITLE}/:/test_results/" \
+           -e KAMATERA_API_CLIENT_ID \
+           -e KAMATERA_API_SECRET \
+           -e "KAMATERA_HOST_PATH=${RESULTS_DIRECTORY}/${SUITE_RUN_TITLE}" \
+           -e SUITE_RUN_TITLE -e NUM_SINGLE_MACHINE_TESTS_TO_RUN -e MAX_PARALLEL_SINGLE_MACHINE_TESTS \
+           -e TEST_EXISTING_MACHINES \
+           -e TEST_HOST_DOCKERDIR="${HOME}/.docker" \
            tests tests_suite.py
 ```
 
@@ -86,4 +116,10 @@ While tests are running you can follow the individual test logs:
 
 ```
 tail -f $RESULTS_DIRECTORY/${SUITE_RUN_TITLE}/test1/logs
+```
+
+Cleanup all the test servers in the Kamatera account
+
+```
+python3.6 tests/cleanup.py "ktm-"
 ```

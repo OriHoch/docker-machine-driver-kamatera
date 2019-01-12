@@ -68,6 +68,7 @@ script:
   - sudo chown -R $USER test_results/ tests/
   - docker tag tests kamatera/kamatera-docker-machine-driver-tests
   - docker push kamatera/kamatera-docker-machine-driver-tests
+  - docker run -t -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET tests cleanup.py "ktm-"
 
 after_failure:
   - artifacts upload test_results/ tests/

@@ -26,6 +26,6 @@ elif [ "${1}" == "bash" ]; then
 
 else
     # Run other Python test scripts (e.g. tests_suite.py)
-    exec python3.6 /"${1}"
+    exec python3.6 /$@
 
 fi
