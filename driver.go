@@ -349,6 +349,7 @@ func (d *Driver) Create() error {
             if res.Status == "error" {return errors.New("Kamatera create server failed")}
             if res.Status == "cancelled" {return errors.New("Kamatera create server cancelled")}
 		} else {
+		    log.Debug(resp.String())
             log.Debugf("Got invalid status code: %d, retrying...", resp.StatusCode)
         }
         time.Sleep(1 * time.Second)
@@ -434,6 +435,7 @@ func (d *Driver) getKamateraServerPower() (string, error) {
             SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
         if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera server power")}
         if resp.StatusCode() != 200 {
+            log.Debug(resp.String())
             if i >= 10 {
                 return "", errors.New(fmt.Sprintf("Invalid Kamatera server power status: %d", resp.StatusCode()))
             } else {
@@ -456,22 +458,38 @@ func (d *Driver) getKamateraServerPower() (string, error) {
 
 func (d *Driver) getKamateraServerId() (string, error) {
     if d.KamateraServerId == "" {
-        resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
-            SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
-        if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera servers list")}
-        var servers []KamateraServerListInfo
-        json.Unmarshal(resp.Body(), &servers)
-        serverId := ""
-        for _, server := range servers {
-            if server.Name == d.MachineName {
-                serverId = server.Id
-                break
+        i := 0
+        for {
+            log.Debugf("Getting kamatera server id (%d)", i)
+            if i > 0 {time.Sleep(2000 + time.Duration(i * 3000) * time.Millisecond)}
+            i += 1
+            resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
+                SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
+            if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera servers list")}
+            if resp.StatusCode() != 200 {
+                log.Debug(resp.String())
+                if i >= 10 {
+                    return "", errors.New(fmt.Sprintf("Invalid Kamatera servers status: %d", resp.StatusCode()))
+                } else {
+                    log.Debugf("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
+                    continue
+                }
             }
-        }
-        if serverId == "" {
-            return "", errors.Wrap(err, "Failed to find Kamatera server ID")
-        } else {
-            d.KamateraServerId = serverId
+            var servers []KamateraServerListInfo
+            json.Unmarshal(resp.Body(), &servers)
+            serverId := ""
+            for _, server := range servers {
+                if server.Name == d.MachineName {
+                    serverId = server.Id
+                    break
+                }
+            }
+            if serverId == "" {
+                return "", errors.Wrap(err, "Failed to find Kamatera server ID")
+            } else {
+                d.KamateraServerId = serverId
+            }
+            break
         }
     }
     return d.KamateraServerId, nil
@@ -481,51 +499,81 @@ func (d *Driver) Remove() error {
     serverId, err := d.getKamateraServerId()
     if err != nil {return err}
     log.Debugf("Removing Kamatera server ID %s", serverId)
-    resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
-        SetFormData(map[string]string{"confirm":"1","force":"1"}).
-        Delete(fmt.Sprintf("https://console.kamatera.com/service/server/%s/terminate", serverId))
-    if err != nil {return err}
-    if resp.StatusCode() != 200 {
-        return errors.New(fmt.Sprintf("Kamatera remove server failed %s", resp.Body()))
+    i := 0
+    for {
+        log.Debugf("Removing server (%d)", i)
+        if i > 0 {time.Sleep(2000 + time.Duration(i * 3000) * time.Millisecond)}
+        i += 1
+        resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
+            SetFormData(map[string]string{"confirm":"1","force":"1"}).
+            Delete(fmt.Sprintf("https://console.kamatera.com/service/server/%s/terminate", serverId))
+        if err != nil {return err}
+        if resp.StatusCode() != 200 {
+            log.Debug(resp.String())
+            if i >= 10 {
+                return errors.New(fmt.Sprintf("Invalid Kamatera remove server status: %d", resp.StatusCode()))
+            } else {
+                log.Debugf("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
+                continue
+            }
+        }
+        var removeServerCommandId int
+        err = json.Unmarshal(resp.Body(), &removeServerCommandId)
+        if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera remove server")}
+        log.Infof("Kamatera remove server started, track progress in Kamatera console, command id = %d", removeServerCommandId)
+        return nil
     }
-    var removeServerCommandId int
-    err = json.Unmarshal(resp.Body(), &removeServerCommandId)
-    if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera remove server")}
-    log.Infof("Kamatera remove server started, track progress in Kamatera console, command id = %d", removeServerCommandId)
-    return nil
 }
 
 func (d *Driver) kamateraPower(power string) error {
     serverId, err := d.getKamateraServerId()
     if err != nil {return err}
     log.Debugf("Initiating power operation %s on Kamatera server ID %s", power, serverId)
-    resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
-        SetFormData(map[string]string{"power":power}).
-        Put(fmt.Sprintf("https://console.kamatera.com/service/server/%s/power", serverId))
-    if err != nil {return err}
-    if resp.StatusCode() != 200 {
-        return errors.New(fmt.Sprintf("Kamatera power operation failed: %s", resp.Body()))
-    }
-    var powerOperationCommandId int
-    err = json.Unmarshal(resp.Body(), &powerOperationCommandId)
-    if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera power operation")}
-    log.Info("Waiting for Kamatera power operation to complete")
-    log.Infof("track progress in Kamatera console, command id = %d", powerOperationCommandId)
+    i := 0
     for {
-        resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
-            SetHeader("AuthSecret", d.APISecret).SetResult(KamateraPowerOperationInfo{}).
-            Get(fmt.Sprintf("https://console.kamatera.com/service/queue/%d", powerOperationCommandId))
-        if err != nil {return errors.Wrap(err, fmt.Sprintf("Failed to get Kamatera command info (%d)", powerOperationCommandId))}
-        res := resp.Result().(*KamateraPowerOperationInfo)
-        log.Debugf("%s", res.Status)
-        if res.Status == "complete" {break}
-        if res.Status == "error" {return errors.New("Kamatera power operation failed")}
-        if res.Status == "cancelled" {return errors.New("Kamatera power operation cancelled")}
-        time.Sleep(1 * time.Second)
-	}
-	time.Sleep(2 * time.Second)
-	log.Infof("Kamatera power operation completed successfully")
-    return nil
+        log.Debugf("Running power operation (%d)", i)
+        if i > 0 {time.Sleep(2000 + time.Duration(i * 3000) * time.Millisecond)}
+        i += 1
+        resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
+            SetFormData(map[string]string{"power":power}).
+            Put(fmt.Sprintf("https://console.kamatera.com/service/server/%s/power", serverId))
+        if err != nil {return err}
+        if resp.StatusCode() != 200 {
+            log.Debug(resp.String())
+            if i >= 10 {
+                return errors.New(fmt.Sprintf("Invalid Kamatera power operation status: %d", resp.StatusCode()))
+            } else {
+                log.Debugf("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
+                continue
+            }
+        }
+        var powerOperationCommandId int
+        err = json.Unmarshal(resp.Body(), &powerOperationCommandId)
+        if err != nil {return errors.Wrap(err, "Invalid JSON response from Kamatera power operation")}
+        log.Info("Waiting for Kamatera power operation to complete")
+        log.Infof("track progress in Kamatera console, command id = %d", powerOperationCommandId)
+        for {
+            log.Debugf("Waiting for power operation")
+            time.Sleep(2000 * time.Millisecond)
+            resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
+                SetHeader("AuthSecret", d.APISecret).SetResult(KamateraPowerOperationInfo{}).
+                Get(fmt.Sprintf("https://console.kamatera.com/service/queue/%d", powerOperationCommandId))
+            if err != nil {return errors.Wrap(err, fmt.Sprintf("Failed to get Kamatera command info (%d)", powerOperationCommandId))}
+            if resp.StatusCode() != 200 {
+                log.Debug(resp.String())
+                log.Debugf("Got invalid status code: %d, retrying...", resp.StatusCode())
+                continue
+            }
+            res := resp.Result().(*KamateraPowerOperationInfo)
+            log.Debugf("%s", res.Status)
+            if res.Status == "complete" {
+	            log.Infof("Kamatera power operation completed successfully")
+                return nil
+            }
+            if res.Status == "error" {return errors.New("Kamatera power operation failed")}
+            if res.Status == "cancelled" {return errors.New("Kamatera power operation cancelled")}
+        }
+    }
 }
 
 func (d *Driver) Restart() error {
