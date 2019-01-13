@@ -1,18 +1,16 @@
 package main
 
 import (
-	// "context"
 	"fmt"
 	"io/ioutil"
 	"net"
-	// "os"
 	"time"
 	"net/http"
     "encoding/json"
-    // "net/url"
     "strings"
     "regexp"
     "bytes"
+    "math/rand"
 
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/log"
@@ -265,6 +263,42 @@ func (d *Driver) PreCreateCheck() error {
     }
 }
 
+func RandomUpperString(n int) string {
+    var letter = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    b := make([]rune, n)
+    for i := range b {
+        b[i] = letter[rand.Intn(len(letter))]
+    }
+    return string(b)
+}
+
+func RandomLowerString(n int) string {
+    var letter = []rune("abcdefghijklmnopqrstuvwxyz")
+    b := make([]rune, n)
+    for i := range b {
+        b[i] = letter[rand.Intn(len(letter))]
+    }
+    return string(b)
+}
+
+func RandomSymbol(n int) string {
+    var letter = []rune("!@$^*()~")
+    b := make([]rune, n)
+    for i := range b {
+        b[i] = letter[rand.Intn(len(letter))]
+    }
+    return string(b)
+}
+
+func RandomDigit(n int) string {
+    var letter = []rune("0123456789")
+    b := make([]rune, n)
+    for i := range b {
+        b[i] = letter[rand.Intn(len(letter))]
+    }
+    return string(b)
+}
+
 func (d *Driver) Create() error {
     log.Debugf("Create: %s", time.Now())
     if d.CreateServerCommandId == 0 {
@@ -276,9 +310,9 @@ func (d *Driver) Create() error {
         log.Debugf("Disk Image: %s %s", d.Image, d.DiskImageId)
         gen, err := password.NewGenerator(&password.GeneratorInput{Symbols: "!@$^*()~",})
         if err != nil {return err}
-        _password, err := gen.Generate(12, 5, 1, false, false)
+        _password, err := gen.Generate(10, 3, 1, false, false)
         if err != nil {return err}
-        d.Password = _password
+        d.Password = _password + RandomLowerString(2) + RandomUpperString(2) + RandomSymbol(2) + RandomDigit(2)
         qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%s&billing=%s&disk_size_0=%s&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0", d.Datacenter, d.MachineName, d.Password, d.Cpu, fmt.Sprintf("%d", d.Ram), d.Billing, fmt.Sprintf("%d", d.DiskSize), strings.Replace(d.DiskImageId, ":", "%3A", -1), "wan")
         log.Debugf("https://console.kamatera.com/service/server?%s", qs)
         payload := strings.NewReader(qs)

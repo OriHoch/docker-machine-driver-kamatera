@@ -6,7 +6,6 @@
 > This library adds the support for creating [Docker machines](https://github.com/docker/machine) hosted on the [Kamatera Cloud](https://www.kamatera.com/).
 
 You need to create a Kamatera access token under `API` > `Keys` in the [Kamatera console](https://console.kamatera.com/keys).
-and pass that to `docker-machine create` with the `--kamatera-api-client-id` and `--kamatera-api-secret` options.
 
 ## Installation
 
@@ -77,11 +76,13 @@ The following options / environment variables are available when running docker-
 - `--kamatera-api-client-id` / `KAMATERA_API_CLIENT_ID`: **required**. Your project-specific access token for the kamatera Cloud API.
 - `--kamatera-api-secret` / `KAMATERA_API_SECRET`: **required**. You Kamatera API secret.
 
-Following are additional configuration for creating the Kamatera server, see [server options](https://console.kamatera.com/service/server) for the supported values:
+Following are additional configuration for creating the Kamatera server:
 
 - `--kamatera-datacenter` / `KAMATERA_DATACENTER` - default: `EU`
 - `--kamatera-billing` / `KAMATERA_BILLING` - default: `hourly`
 - `--kamatera-cpu` / `KAMATERA_CPU` - default: `1B`
 - `--kamatera-ram` / `KAMATERA_RAM` - default: `512`
 - `--kamatera-disk-size` / `KAMATERA_DISK_SIZE` - default: `10`
-- `--kamatera-image` / `KAMATERA_IMAGE` - default: `ubuntu_server_16.04_64-bit`
+- `--kamatera-image` / `KAMATERA_IMAGE` - default: `ubuntu_server_18.04_64-bit`
+
+see [Kamatera server options](https://console.kamatera.com/service/server) for the supported values (must be logged-in to Kamatera console)

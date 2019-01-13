@@ -4,6 +4,7 @@ import subprocess
 import binascii
 import datetime
 import traceback
+import time
 
 
 # run a single machine test of various operations
@@ -50,16 +51,16 @@ if not os.environ.get('KAMATERA_API_CLIENT_ID') or not os.environ.get('KAMATERA_
     exit(1)
 
 
-# 20 minutes - timeout for the create command
-KAMATERA_CREATE_TIMEOUT_SECONDS = int(os.environ.get('KAMATERA_CREATE_TIMEOUT_SECONDS', '1200'))
+# 40 minutes - timeout for the create command
+KAMATERA_CREATE_TIMEOUT_SECONDS = int(os.environ.get('KAMATERA_CREATE_TIMEOUT_SECONDS', '2400'))
 
 
-# 2 minutes - timeout for power operations (restart, stop, start etc..)
-KAMATERA_POWER_TIMEOUT_SECONDS = int(os.environ.get('KAMATERA_POWER_TIMEOUT_SECONDS', '120'))
+# 20 minutes - timeout for power operations (restart, stop, start etc..)
+KAMATERA_POWER_TIMEOUT_SECONDS = int(os.environ.get('KAMATERA_POWER_TIMEOUT_SECONDS', '1200'))
 
 
-# 1 minute - default timeout for all other test commands
-KAMATERA_DEFAULT_TIMEOUT_SECONDS = int(os.environ.get('KAMATERA_DEFAULT_TIMEOUT_SECONDS', '60'))
+# 20 minute - default timeout for all other test commands
+KAMATERA_DEFAULT_TIMEOUT_SECONDS = int(os.environ.get('KAMATERA_DEFAULT_TIMEOUT_SECONDS', '1200'))
 
 
 # global timeout for all commands, defaults to 0 which uses a sum of the individual command timeouts
@@ -135,11 +136,13 @@ global_start_datetime = datetime.datetime.now()
 def get_cmd(cmd, assertions):
     env = None
     is_machine = True
+    max_retries = 1
     if cmd == 'hello-world':
         cmd = ['docker', 'run', 'hello-world']
         machine_host = get_machine_host()
+        max_retries = 10
         if not machine_host:
-            return None, None
+            return None, None, max_retries
         env = {'DOCKER_TLS_VERIFY': '1',
                'DOCKER_HOST': machine_host,
                'DOCKER_CERT_PATH': KAMATERA_DOCKER_MACHINE_PATH_TEMPLATE.format(machine_name=machine_name),
@@ -160,7 +163,7 @@ def get_cmd(cmd, assertions):
         if 'output' not in assertions:
             extra_args.append('--debug')
         cmd = ['docker-machine', *extra_args, *cmd]
-    return cmd, env
+    return cmd, env, max_retries
 
 
 def run_cmd(cmd, env, assertions, cmd_timeout_seconds):
@@ -189,49 +192,59 @@ def run_cmd(cmd, env, assertions, cmd_timeout_seconds):
     return returncode, output
 
 
-def run_test(test_num, test, errors):
+def run_test(test_num, test, errors, num_retries=0):
     cmd, assertions = test
     if cmd == 'create' and KAMATERA_TEST_CREATED_MACHINE_NAME:
         info('Skipping create, using existing machine')
         return
     info('Starting test', test_num, cmd, assertions)
-    cmd, env = get_cmd(cmd, assertions)
+    cmd, env, max_retries = get_cmd(cmd, assertions)
+    _errors = []
     if cmd is None:
         if {k:v for k,v in assertions.items() if k != 'timeout'} == {'returncode': -1}:
+            # assertion returncode = -1 means process is expected to fail
             return
         else:
-            errors.append('({}) failed: cmd = "{}"'.format(test_num, cmd))
-            print(errors[-1])
+            _errors.append('({}) failed: cmd = "{}"'.format(test_num, cmd))
+            print(_errors[-1])
     else:
         cmd_timeout_seconds = assertions.pop('timeout')
         returncode, output = run_cmd(cmd, env, assertions, cmd_timeout_seconds)
         for assertion, expected_value in assertions.items():
             if assertion == 'returncode':
                 if (expected_value < 0 and returncode == 0) or (expected_value > -1 and returncode != expected_value):
-                    errors.append(
+                    _errors.append(
                         '({}) failed: cmd = "{}", assertion = "{}", expected = "{}", actual = "{}"'.format(
                             test_num, cmd, assertion, expected_value, returncode
                         )
                     )
-                    print(errors[-1])
+                    print(_errors[-1])
             elif assertion == 'output':
                 assert type(expected_value) == str
                 expected_value = expected_value.format(machine_name=machine_name)
                 if output != expected_value:
-                    errors.append(
+                    _errors.append(
                         '({}) failed: cmd = "{}", assertion = "{}", expected = "{}", actual = "{}"'.format(
                             test_num, cmd, assertion, expected_value, output
                         )
                     )
-                    print(errors[-1])
+                    print(_errors[-1])
             else:
                 raise Exception('invalid assertion: {} = {}'.format(assertion, expected_value))
-    if KAMATERA_MAX_ERRORS_TO_STOP > 0 and len(errors) >= KAMATERA_MAX_ERRORS_TO_STOP:
-        print('Too many errors! ({})'.format(len(errors)))
-        print('------------ failed test summary ------------')
-        for e in errors:
-            print(' > ' + e)
-        exit(1)
+    if len(_errors) > 0:
+        if max_retries > 1 and num_retries < max_retries:
+            print(_errors)
+            print('Retrying failed test.. {}/{}'.format(num_retries, max_retries))
+            time.sleep(1*num_retries)
+            return run_test(test_num, test, errors, num_retries + 1)
+        else:
+            errors += _errors
+            if KAMATERA_MAX_ERRORS_TO_STOP > 0 and len(errors) >= KAMATERA_MAX_ERRORS_TO_STOP:
+                print('Too many errors! ({})'.format(len(errors)))
+                print('------------ failed test summary ------------')
+                for e in errors:
+                    print(' > ' + e)
+                exit(1)
 
 
 def run_tests():
