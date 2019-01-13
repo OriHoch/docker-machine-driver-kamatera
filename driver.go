@@ -222,12 +222,14 @@ func IsIntInArray(i int, arr []int) bool {
 }
 
 func (d *Driver) PreCreateCheck() error {
+    log.Debugf("PreCreateCheck: %s", time.Now())
     if d.CreateServerCommandId != 0 {
         log.Debugf("Skipping pre-create checks, continuing from existing command id = %d", d.CreateServerCommandId)
         return nil
     }
     i := 0
     for {
+        log.Debugf("PreCreateCheck (%d): %s", i, time.Now())
         if i > 0 {time.Sleep(time.Duration(i * 6000) * time.Millisecond)}
         i += 1
         resp, err := resty.R().
@@ -264,6 +266,7 @@ func (d *Driver) PreCreateCheck() error {
 }
 
 func (d *Driver) Create() error {
+    log.Debugf("Create: %s", time.Now())
     if d.CreateServerCommandId == 0 {
         log.Infof("Creating Kamatera server...")
         log.Debugf("Datacenter: %s", d.DatacenterName)
@@ -271,7 +274,9 @@ func (d *Driver) Create() error {
         log.Debugf("Ram: %d", d.Ram)
         log.Debugf("Disk Size (GB): %d", d.DiskSize)
         log.Debugf("Disk Image: %s %s", d.Image, d.DiskImageId)
-        _password, err := password.Generate(12, 5, 1, false, false)
+        gen, err := password.NewGenerator(&password.GeneratorInput{Symbols: "!@$^*()~",})
+        if err != nil {return err}
+        _password, err := gen.Generate(12, 5, 1, false, false)
         if err != nil {return err}
         d.Password = _password
         qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%s&billing=%s&disk_size_0=%s&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0", d.Datacenter, d.MachineName, d.Password, d.Cpu, fmt.Sprintf("%d", d.Ram), d.Billing, fmt.Sprintf("%d", d.DiskSize), strings.Replace(d.DiskImageId, ":", "%3A", -1), "wan")
@@ -279,6 +284,7 @@ func (d *Driver) Create() error {
         payload := strings.NewReader(qs)
         i := 0
         for {
+            log.Debugf("Create (%d): %s", i, time.Now())
             if i > 0 {
                 log.Debugf("Retry %d / 10", i)
                 time.Sleep(time.Duration(i * 6000) * time.Millisecond)
@@ -300,20 +306,21 @@ func (d *Driver) Create() error {
                     continue
                 }
             }
+            body, err := ioutil.ReadAll(r.Body)
+            if err != nil {
+                if i >= 10 {
+                    return errors.Wrap(err, "Failed to read Kamatera create server response body")
+                } else {
+                    log.Debugf("Failed to read Kamatera create server response body: %s", err)
+                    continue
+                }
+            }
+            log.Debug(string(body))
             if r.StatusCode != 200 {
                 if i >= 10 {
                     return errors.New(fmt.Sprintf("Invalid Kamatera create server response status: %d", r.StatusCode))
                 } else {
                     log.Debugf("Got invalid status code: %d", r.StatusCode)
-                    continue
-                }
-            }
-            body, err := ioutil.ReadAll(r.Body)
-            if err != nil {
-                if i >= 10 {
-                    return errors.Wrap(err, "Failed to parse Kamatera create server response body")
-                } else {
-                    log.Debug("Failed to parse Kamatera create server response body")
                     continue
                 }
             }
@@ -323,7 +330,7 @@ func (d *Driver) Create() error {
                 if i >= 10 {
                     return errors.Wrap(err, "Invalid JSON response from Kamatera create server")
                 } else {
-                    log.Debug("Failed to parse Kamatera create server response body")
+                    log.Debugf("Failed to parse Kamatera create server response body", err)
                     continue
                 }
             }
@@ -336,6 +343,8 @@ func (d *Driver) Create() error {
     log.Infof("You can track progress in the Kamatera console web-ui (Command ID = %d)", d.CreateServerCommandId)
     createServerLog := ""
     for {
+        log.Debugf("Create/wait: %s", time.Now())
+        time.Sleep(2 * time.Second)
         resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
             SetHeader("AuthSecret", d.APISecret).SetResult(KamateraServerCommandInfo{}).
             Get(fmt.Sprintf("https://console.kamatera.com/service/queue/%d", d.CreateServerCommandId))
@@ -350,11 +359,10 @@ func (d *Driver) Create() error {
             if res.Status == "cancelled" {return errors.New("Kamatera create server cancelled")}
 		} else {
 		    log.Debug(resp.String())
-            log.Debugf("Got invalid status code: %d, retrying...", resp.StatusCode)
+            log.Debugf("Got invalid status code: %d, retrying...", resp.StatusCode())
         }
-        time.Sleep(1 * time.Second)
 	}
-	log.Infof("Kamatera create server command completed successfully")
+	log.Infof("Kamatera create server command completed successfully (%s)", time.Now())
 	var pattern = regexp.MustCompile(` ([0-9]+.[0-9]+.[0-9]+.[0-9]+) `)
 	d.IPAddress = strings.Trim(pattern.FindString(createServerLog), " ")
 	log.Debugf("Server IP = '%s'", d.IPAddress)
@@ -369,9 +377,10 @@ func (d *Driver) Create() error {
     pkey := string(buf)
     log.Debugf("Waiting for server status...")
     for {
+        log.Debugf("Create/wait-status: %s", time.Now())
+        time.Sleep(2 * time.Second)
         srvstate, _ := d.GetState()
         if srvstate == state.Running {break}
-        time.Sleep(1 * time.Second)
     }
     config := &ssh.ClientConfig{
         User: "root",
@@ -382,7 +391,8 @@ func (d *Driver) Create() error {
     }
     log.Debugf("Copying SSH key to the server and performing initialization")
     for {
-        time.Sleep(1 * time.Second)
+        log.Debugf("Create/ssh: %s", time.Now())
+        time.Sleep(2 * time.Second)
         client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", d.IPAddress), config)
         if err == nil {
             session, err := client.NewSession()
@@ -391,11 +401,14 @@ func (d *Driver) Create() error {
                 var b bytes.Buffer
                 session.Stdout = &b
                 cmd := fmt.Sprintf("bash -c 'mkdir -p .ssh && echo \"%s\" >> .ssh/authorized_keys'", pkey)
-                log.Debugf(cmd)
+                log.Debugf("Running ssh cmd: %s", cmd)
                 err = session.Run(cmd)
                 if err != nil {return errors.Wrap(err, "Failed to copy SSH key to the Kamatera server")}
+                log.Debugf("SSH Initialization completed successfully (%s)", time.Now())
                 return nil
             }
+        } else {
+            log.Debugf("SSH failure (%s): %s", time.Now(), err)
         }
     }
 }
@@ -429,6 +442,7 @@ func (d *Driver) GetState() (state.State, error) {
 func (d *Driver) getKamateraServerPower() (string, error) {
     i := 0
     for {
+        log.Debugf("getKamateraServerPower: %s", time.Now())
         if i > 0 {time.Sleep(2000 + time.Duration(i * 3000) * time.Millisecond)}
         i += 1
         resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
@@ -460,7 +474,7 @@ func (d *Driver) getKamateraServerId() (string, error) {
     if d.KamateraServerId == "" {
         i := 0
         for {
-            log.Debugf("Getting kamatera server id (%d)", i)
+            log.Debugf("Getting kamatera server id (%s): %d", time.Now(), i)
             if i > 0 {time.Sleep(2000 + time.Duration(i * 3000) * time.Millisecond)}
             i += 1
             resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
@@ -501,13 +515,13 @@ func (d *Driver) Remove() error {
     log.Debugf("Removing Kamatera server ID %s", serverId)
     i := 0
     for {
-        log.Debugf("Removing server (%d)", i)
+        log.Debugf("Removing server (%s): %d", time.Now(), i)
         if i > 0 {time.Sleep(2000 + time.Duration(i * 3000) * time.Millisecond)}
         i += 1
         resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
             SetFormData(map[string]string{"confirm":"1","force":"1"}).
             Delete(fmt.Sprintf("https://console.kamatera.com/service/server/%s/terminate", serverId))
-        if err != nil {return err}
+        if err != nil {return errors.Wrap(err, "Failed to run terminate operation")}
         if resp.StatusCode() != 200 {
             log.Debug(resp.String())
             if i >= 10 {
@@ -527,17 +541,17 @@ func (d *Driver) Remove() error {
 
 func (d *Driver) kamateraPower(power string) error {
     serverId, err := d.getKamateraServerId()
-    if err != nil {return err}
+    if err != nil {return errors.Wrap(err, "Failed to get server id for power operation")}
     log.Debugf("Initiating power operation %s on Kamatera server ID %s", power, serverId)
     i := 0
     for {
-        log.Debugf("Running power operation (%d)", i)
+        log.Debugf("Running power operation (%s): %d", time.Now(), i)
         if i > 0 {time.Sleep(2000 + time.Duration(i * 3000) * time.Millisecond)}
         i += 1
         resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).SetHeader("AuthSecret", d.APISecret).
             SetFormData(map[string]string{"power":power}).
             Put(fmt.Sprintf("https://console.kamatera.com/service/server/%s/power", serverId))
-        if err != nil {return err}
+        if err != nil {return errors.Wrap(err, "Failed to run power operation")}
         if resp.StatusCode() != 200 {
             log.Debug(resp.String())
             if i >= 10 {
@@ -553,7 +567,7 @@ func (d *Driver) kamateraPower(power string) error {
         log.Info("Waiting for Kamatera power operation to complete")
         log.Infof("track progress in Kamatera console, command id = %d", powerOperationCommandId)
         for {
-            log.Debugf("Waiting for power operation")
+            log.Debugf("Waiting for power operation (%s)", time.Now())
             time.Sleep(2000 * time.Millisecond)
             resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
                 SetHeader("AuthSecret", d.APISecret).SetResult(KamateraPowerOperationInfo{}).
