@@ -3,6 +3,7 @@ import os
 import subprocess
 import time
 import csv
+import datetime
 from create_args_generator import create_args_generator
 
 
@@ -12,8 +13,9 @@ from create_args_generator import create_args_generator
 
 
 NUM_SINGLE_MACHINE_TESTS_TO_RUN = int(os.environ.get('NUM_SINGLE_MACHINE_TESTS_TO_RUN', '2'))
-MAX_PARALLEL_SINGLE_MACHINE_TESTS = int(os.environ.get('MAX_PARALLEL_SINGLE_MACHINE_TESTS', '10'))
+MAX_PARALLEL_SINGLE_MACHINE_TESTS = int(os.environ.get('MAX_PARALLEL_SINGLE_MACHINE_TESTS', '20'))
 TEST_HOST_DOCKERDIR = os.environ.get('TEST_HOST_DOCKERDIR', '')
+GLOBAL_TIMEOUT_SECONDS = int(os.environ.get('GLOBAL_TIMEOUT_SECONDS', '900'))  # 15 minutes
 
 
 TEST_EXISTING_MACHINES = os.environ.get('TEST_EXISTING_MACHINES')
@@ -43,6 +45,7 @@ print(' -- host_path={}'.format(host_path))
 print(' -- local_path={}'.format(local_path))
 
 
+start_datetime = datetime.datetime.now()
 create_args_gen = create_args_generator()
 
 
@@ -58,17 +61,17 @@ def start_tests_batch(test_names, machine_names=None):
             extra_args += ' -v {host_dockerdir}:/root/.docker -v {host_dockerdir}:{host_dockerdir} '.format(
                 host_dockerdir=TEST_HOST_DOCKERDIR
             )
-        subprocess.check_call("""
-                docker run --rm --name {suite_run_title}-{test_name} -d \
-                    -v {kamatera_host_path}/{test_name}/:/kamatera/ \
-                    -e KAMATERA_API_CLIENT_ID \
-                    -e KAMATERA_API_SECRET \
-                    -e KAMATERA_CREATE_ARGS={create_args} \
-                    {extra_args} \
-                    tests
-            """.format(test_name=test_name, kamatera_host_path=host_path, suite_run_title=suite_run_title,
-                       extra_args=extra_args, create_args=','.join(next(create_args_gen))),
-                              shell=True)
+        cmd = """docker run --rm --name {suite_run_title}-{test_name} -d \
+                            -v {kamatera_host_path}/{test_name}/:/kamatera/ \
+                            -e KAMATERA_API_CLIENT_ID \
+                            -e KAMATERA_API_SECRET \
+                            -e KAMATERA_CREATE_ARGS={create_args} \
+                            {extra_args} \
+                            tests
+              """.format(test_name=test_name, kamatera_host_path=host_path, suite_run_title=suite_run_title,
+                       extra_args=extra_args, create_args=','.join(next(create_args_gen)))
+        print(cmd)
+        subprocess.check_call(cmd, shell=True)
     print('Waiting for test batch to complete')
     batch_test_status = {}
     while len(batch_test_status) != len(test_names):
@@ -76,6 +79,9 @@ def start_tests_batch(test_names, machine_names=None):
         print('.')
         for test_name in test_names:
             if test_name in batch_test_status: continue
+            if (datetime.datetime.now() - start_datetime).seconds > GLOBAL_TIMEOUT_SECONDS:
+                batch_test_status[test_name] = 'TIMEOUT'
+                continue
             status_path = '{}/{}/status'.format(local_path, test_name)
             if os.path.exists(status_path):
                 with open(status_path) as f:
