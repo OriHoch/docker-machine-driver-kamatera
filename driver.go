@@ -257,7 +257,7 @@ func (d *Driver) PreCreateCheck() error {
                 break
             }
         }
-        if d.DiskImageId == "" {return errors.New("Invalid disk image")}
+        if d.DiskImageId == "" {return errors.New(fmt.Sprintf("Invalid disk image: %s", d.Image))}
         return nil
     }
 }
@@ -598,7 +598,7 @@ func (d *Driver) kamateraPower(power string) error {
         log.Info("Waiting for Kamatera power operation to complete")
         log.Infof("track progress in Kamatera console, command id = %d", powerOperationCommandId)
         for {
-            log.Debugf("Waiting for power operation (%s)", time.Now())
+            log.Debugf("Waiting for power operation (%s): %d", time.Now())
             time.Sleep(2000 * time.Millisecond)
             resp, err := resty.R().SetHeader("AuthClientId", d.APIClientID).
                 SetHeader("AuthSecret", d.APISecret).SetResult(KamateraPowerOperationInfo{}).
@@ -606,8 +606,16 @@ func (d *Driver) kamateraPower(power string) error {
             if err != nil {return errors.Wrap(err, fmt.Sprintf("Failed to get Kamatera command info (%d)", powerOperationCommandId))}
             if resp.StatusCode() != 200 {
                 log.Debug(resp.String())
-                log.Debugf("Got invalid status code: %d, retrying...", resp.StatusCode())
-                continue
+                if i >= 10 {
+                    return errors.New(fmt.Sprintf("Invalid Kamatera power operation wait status: %d", resp.StatusCode()))
+                } else {
+                    log.Debugf("Got invalid status code: %d, retrying...", resp.StatusCode())
+                    if resp.StatusCode() == 500 {
+                        return d.kamateraPower(power)
+                    } else {
+                        continue
+                    }
+                }
             }
             res := resp.Result().(*KamateraPowerOperationInfo)
             log.Debugf("%s", res.Status)
