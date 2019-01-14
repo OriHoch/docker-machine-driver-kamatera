@@ -11,14 +11,13 @@ import (
     "regexp"
     "bytes"
     "math/rand"
+    "net/url"
 
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/mcnflag"
-	// "github.com/docker/machine/libmachine/mcnutils"
 	mcnssh "github.com/docker/machine/libmachine/ssh"
 	"github.com/docker/machine/libmachine/state"
-	// "github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"github.com/go-resty/resty"
@@ -308,12 +307,10 @@ func (d *Driver) Create() error {
         log.Debugf("Ram: %d", d.Ram)
         log.Debugf("Disk Size (GB): %d", d.DiskSize)
         log.Debugf("Disk Image: %s %s", d.Image, d.DiskImageId)
-        gen, err := password.NewGenerator(&password.GeneratorInput{Symbols: "!@$^*()~",})
+        password, err := password.Generate(12, 3, 0, false, false)
         if err != nil {return err}
-        _password, err := gen.Generate(10, 3, 1, false, false)
-        if err != nil {return err}
-        d.Password = _password + RandomLowerString(2) + RandomUpperString(2) + RandomSymbol(2) + RandomDigit(2)
-        qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%s&billing=%s&disk_size_0=%s&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0", d.Datacenter, d.MachineName, d.Password, d.Cpu, fmt.Sprintf("%d", d.Ram), d.Billing, fmt.Sprintf("%d", d.DiskSize), strings.Replace(d.DiskImageId, ":", "%3A", -1), "wan")
+        d.Password = password
+        qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%d&billing=%s&disk_size_0=%d&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0", url.PathEscape(d.Datacenter), url.PathEscape(d.MachineName), url.PathEscape(d.Password), url.PathEscape(d.Cpu), d.Ram, url.PathEscape(d.Billing), d.DiskSize, strings.Replace(url.PathEscape(d.DiskImageId), ":", "%3A", -1), "wan")
         log.Debugf("https://console.kamatera.com/service/server?%s", qs)
         payload := strings.NewReader(qs)
         i := 0
