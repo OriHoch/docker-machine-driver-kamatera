@@ -79,6 +79,9 @@ KAMATERA_DOCKER_MACHINE_PATH_TEMPLATE = os.path.expanduser(KAMATERA_DOCKER_MACHI
 
 KAMATERA_TEST_CREATED_MACHINE_NAME = os.environ.get('KAMATERA_TEST_CREATED_MACHINE_NAME', '')
 
+
+KAMATERA_CREATE_ARGS = os.environ.get('KAMATERA_CREATE_ARGS', '')
+
 # how many errors are encountered to stop the test
 # defaults to 1 - test stops on first error
 KAMATERA_MAX_ERRORS_TO_STOP = int(os.environ.get('KAMATERA_MAX_ERRORS_TO_STOP', '1'))
@@ -127,6 +130,7 @@ if KAMATERA_GLOBAL_TIMEOUT_SECONDS > 0:
 
 info('KAMATERA_MAX_ERRORS_TO_STOP = {}\n'.format(KAMATERA_MAX_ERRORS_TO_STOP),
      'global timeout (seconds) = {}\n'.format(global_timeout_seconds),
+     'KAMATERA_CREATE_ARGS = {}\n'.format(KAMATERA_CREATE_ARGS),
      '--- Starting test ---')
 
 
@@ -149,7 +153,12 @@ def get_cmd(cmd, assertions):
                'DOCKER_MACHINE_NAME': machine_name}
         is_machine = False
     elif cmd == 'create':
-        cmd = ['create', '-d', 'kamatera', machine_name]
+        create_args = []
+        if KAMATERA_CREATE_ARGS:
+            for create_arg in KAMATERA_CREATE_ARGS.split(','):
+                if len(create_arg.strip()) > 0:
+                    create_args.append(create_arg.strip())
+        cmd = ['create', '-d', 'kamatera', *create_args, machine_name]
     elif cmd == 'ssh-hostname':
         cmd = ['ssh', machine_name, 'hostname']
     elif cmd == 'rm':

@@ -3,6 +3,7 @@ import os
 import subprocess
 import time
 import csv
+from create_args_generator import create_args_generator
 
 
 # Runs a full tests suite using Docker to run and track multiple test instances in parallel
@@ -42,6 +43,9 @@ print(' -- host_path={}'.format(host_path))
 print(' -- local_path={}'.format(local_path))
 
 
+create_args_gen = create_args_generator()
+
+
 def start_tests_batch(test_names, machine_names=None):
     print('Starting test batch: {}'.format(test_names))
     for i, test_name in enumerate(test_names):
@@ -59,10 +63,11 @@ def start_tests_batch(test_names, machine_names=None):
                     -v {kamatera_host_path}/{test_name}/:/kamatera/ \
                     -e KAMATERA_API_CLIENT_ID \
                     -e KAMATERA_API_SECRET \
+                    -e KAMATERA_CREATE_ARGS={create_args} \
                     {extra_args} \
                     tests
             """.format(test_name=test_name, kamatera_host_path=host_path, suite_run_title=suite_run_title,
-                       extra_args=extra_args),
+                       extra_args=extra_args, create_args=','.join(next(create_args_gen))),
                               shell=True)
     print('Waiting for test batch to complete')
     batch_test_status = {}

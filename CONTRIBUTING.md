@@ -56,14 +56,7 @@ Copy the binary to the tests directory
 cp -f `which docker-machine-driver-kamatera` tests/
 ```
 
-Build and run a test using Docker
-
-```
-docker build -t tests tests/ &&\
-docker run -it -e TESTS_DEBUG=1 -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET tests
-```
-
-Run a test using Python
+Run a test
 
 ```
 python3.6 tests/test.py

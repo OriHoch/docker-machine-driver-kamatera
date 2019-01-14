@@ -17,3 +17,4 @@ docker-machine-driver-kamatera
 .idea
 
 test_results
+kamatera_server_options.json
