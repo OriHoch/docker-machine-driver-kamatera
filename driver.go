@@ -235,10 +235,13 @@ func (d *Driver) PreCreateCheck() error {
             Get("https://console.kamatera.com/service/server")
         if err != nil {return err}
         if resp.StatusCode() != 200 {
-            log.Infof(resp.String())
             if resp.StatusCode() == 404 {
                 return errors.New("Kamatera resource not found, please try again")
             }
+            if resp.StatusCode() == 500 {
+                return errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", resp.String()))
+            }
+            log.Info(resp.String())
             if i >= 10 {
                 return errors.New(fmt.Sprintf("Invalid status code: %d", resp.StatusCode()))
             }
@@ -314,6 +317,9 @@ func (d *Driver) Create() error {
                 }
             }
             if r.StatusCode != 200 {
+                if r.StatusCode == 500 {
+                    return errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", string(body)))
+                }
                 log.Info(string(body))
                 if i >= 10 {
                     return errors.New(fmt.Sprintf("Invalid Kamatera create server response status: %d", r.StatusCode))
@@ -358,6 +364,13 @@ func (d *Driver) Create() error {
             if res.Status == "error" {return errors.New("Kamatera create server failed")}
             if res.Status == "cancelled" {return errors.New("Kamatera create server cancelled")}
 		} else {
+		    if resp.StatusCode() == 404 {
+		        log.Infof("Waiting for command to start...")
+		        continue
+		    }
+            if resp.StatusCode() == 500 {
+                return errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", resp.String()))
+            }
             log.Infof(resp.String())
             log.Infof("Got invalid status code: %d, retrying...", resp.StatusCode())
         }
@@ -449,11 +462,17 @@ func (d *Driver) getKamateraServerPower() (string, error) {
             SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
         if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera server power")}
         if resp.StatusCode() != 200 {
+            if resp.StatusCode() == 404 {
+                return "", errors.New("Kamatera resource not found")
+            }
+		    if resp.StatusCode() == 500 {
+                return "", errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", resp.String()))
+            }
             log.Info(resp.String())
             if i >= 10 {
                 return "", errors.New(fmt.Sprintf("Invalid Kamatera server power status: %d", resp.StatusCode()))
             } else {
-                log.Debugf("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
+                log.Infof("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
                 continue
             }
         }
@@ -481,6 +500,12 @@ func (d *Driver) getKamateraServerId() (string, error) {
                 SetHeader("AuthSecret", d.APISecret).Get("https://console.kamatera.com/service/servers")
             if err != nil {return "", errors.Wrap(err, "Failed to get Kamatera servers list")}
             if resp.StatusCode() != 200 {
+                if resp.StatusCode() == 404 {
+                    return "", errors.New("Kamatera resource not found")
+                }
+                if resp.StatusCode() == 500 {
+                    return "", errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", resp.String()))
+                }
                 log.Info(resp.String())
                 if i >= 10 {
                     return "", errors.New(fmt.Sprintf("Invalid Kamatera servers status: %d", resp.StatusCode()))
@@ -523,11 +548,17 @@ func (d *Driver) Remove() error {
             Delete(fmt.Sprintf("https://console.kamatera.com/service/server/%s/terminate", serverId))
         if err != nil {return errors.Wrap(err, "Failed to run terminate operation")}
         if resp.StatusCode() != 200 {
+            if resp.StatusCode() == 404 {
+                return errors.New("Kamatera resource not found")
+            }
+            if resp.StatusCode() == 500 {
+                return errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", resp.String()))
+            }
             log.Info(resp.String())
             if i >= 10 {
                 return errors.New(fmt.Sprintf("Invalid Kamatera remove server status: %d", resp.StatusCode()))
             } else {
-                log.Debugf("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
+                log.Infof("Got invalid status code: %d, retrying... %d/10", resp.StatusCode(), i)
                 continue
             }
         }
@@ -553,10 +584,13 @@ func (d *Driver) kamateraPower(power string) error {
             Put(fmt.Sprintf("https://console.kamatera.com/service/server/%s/power", serverId))
         if err != nil {return errors.Wrap(err, "Failed to run power operation")}
         if resp.StatusCode() != 200 {
-            log.Infof(resp.String())
             if resp.StatusCode() == 404 {
                 return errors.New("Kamatera resource not found")
             }
+            if resp.StatusCode() == 500 {
+                return errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", resp.String()))
+            }
+            log.Infof(resp.String())
             if i >= 10 {
                 return errors.New(fmt.Sprintf("Invalid Kamatera power operation status: %d", resp.StatusCode()))
             }
@@ -576,11 +610,14 @@ func (d *Driver) kamateraPower(power string) error {
                 Get(fmt.Sprintf("https://console.kamatera.com/service/queue/%d", powerOperationCommandId))
             if err != nil {return errors.Wrap(err, fmt.Sprintf("Failed to get Kamatera command info (%d)", powerOperationCommandId))}
             if resp.StatusCode() != 200 {
+                if resp.StatusCode() == 500 {
+                    return errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", resp.String()))
+                }
                 log.Info(resp.String())
                 if i >= 10 {
                     return errors.New(fmt.Sprintf("Invalid Kamatera power operation wait status: %d", resp.StatusCode()))
                 } else {
-                    log.Debugf("Got invalid status code: %d, retrying...", resp.StatusCode())
+                    log.Infof("Got invalid status code: %d, retrying...", resp.StatusCode())
                     if resp.StatusCode() == 500 {
                         return d.kamateraPower(power)
                     } else {
