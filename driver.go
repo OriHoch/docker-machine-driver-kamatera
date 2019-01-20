@@ -48,7 +48,7 @@ const (
     defaultDatacenter = "EU"
 	defaultBilling = "hourly"
 	defaultCpu  = "1B"
-	defaultRam = 512
+	defaultRam = 1024
 	defaultDiskSize = 10
 	defaultImage = "ubuntu_server_18.04_64-bit"
 

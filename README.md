@@ -12,13 +12,13 @@ You need to create a Kamatera access token under `API` > `Keys` in the [Kamatera
 Download the latest binary for your platform from [Releases](https://github.com/OriHoch/docker-machine-driver-kamatera/releases)
 
 ```
-wget https://github.com/OriHoch/docker-machine-driver-kamatera/releases/download/v0.0.3/docker-machine-driver-kamatera_v0.0.3_linux_amd64.tar.gz
+wget https://github.com/OriHoch/docker-machine-driver-kamatera/releases/download/v1.0.0-RC1/docker-machine-driver-kamatera_v1.0.0-RC1_linux_amd64.tar.gz
 ```
 
 Extract and install
 
 ```
-tar -xvf docker-machine-driver-kamatera_v0.0.3_linux_amd64.tar.gz
+tar -xvf docker-machine-driver-kamatera_v1.0.0-RC1_linux_amd64.tar.gz
 chmod +x docker-machine-driver-kamatera
 mv docker-machine-driver-kamatera /usr/local/bin/
 ```
@@ -81,7 +81,7 @@ Following are additional configuration for creating the Kamatera server:
 - `--kamatera-datacenter` / `KAMATERA_DATACENTER` - default: `EU`
 - `--kamatera-billing` / `KAMATERA_BILLING` - default: `hourly`
 - `--kamatera-cpu` / `KAMATERA_CPU` - default: `1B`
-- `--kamatera-ram` / `KAMATERA_RAM` - default: `512`
+- `--kamatera-ram` / `KAMATERA_RAM` - default: `1024`
 - `--kamatera-disk-size` / `KAMATERA_DISK_SIZE` - default: `10`
 - `--kamatera-image` / `KAMATERA_IMAGE` - default: `ubuntu_server_18.04_64-bit`
 
