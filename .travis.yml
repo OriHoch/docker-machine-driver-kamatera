@@ -70,6 +70,7 @@ script:
                -e "KAMATERA_HOST_PATH=`pwd`/test_results/kamatera-suite-1" \
                -e SUITE_RUN_TITLE=kamatera-suite-1 \
                -e NUM_SINGLE_MACHINE_TESTS_TO_RUN=5 \
+               -e TEST_ACCOUNT \
                tests tests_suite.py
   - sudo chown -R $USER test_results/ tests/
   - docker tag tests kamatera/kamatera-docker-machine-driver-tests

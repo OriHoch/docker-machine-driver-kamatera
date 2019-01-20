@@ -130,21 +130,45 @@ for test_name in errored_tests:
     subprocess.check_call('tail -10 {}/{}/logs'.format(local_path, test_name), shell=True)
     print(' ----- end of last 30 log lines ({}: ERROR) ----- '.format(test_name))
 
+def get_test_results(_test_name):
+    returncode, output = subprocess.getstatusoutput('tail -10 {}/{}/logs'.format(local_path, _test_name))
+    if returncode == 0:
+        last_logs = output
+        is_create_frequency_reached = subprocess.call(
+            "cat {}/{}/logs | grep '\"code\":52,'".format(local_path, test_name),
+            shell=True
+        ) == 0
+        if is_create_frequency_reached:
+            error = 'reached server create frequency limit'
+            if os.environ.get('TEST_ACCOUNT') == 'FREQLIMIT':
+                error = '{}. Test is not condidered a failure because test account has limited frequency'.format(error)
+        else:
+            error = ''
+    else:
+        is_create_frequency_reached = False
+        last_logs = output
+        error = 'failed to get last logs'
+    return error, last_logs, is_create_frequency_reached
+
 print("Aggregating test results...")
+num_errors = 0
+num_success = 0
 with open('{}/results.csv'.format(local_path), 'w') as csvfile:
     csvwriter = csv.writer(csvfile)
     csvwriter.writerow(['test_name', 'status', 'error', 'last_logs'])
     for test_name, status in test_status.items():
-        returncode, output = subprocess.getstatusoutput('tail -10 {}/{}/logs'.format(local_path, test_name))
-        if returncode == 0:
-            last_logs = output
-            error = ''
+        test_error, test_last_logs, is_create_frequency_reached = get_test_results(test_name)
+        if is_create_frequency_reached and os.environ.get('TEST_ACCOUNT') == 'FREQLIMIT':
+            # Test is not condidered a failure because test account has limited frequency
+            num_success += 1
+        elif status == 'ERROR':
+            num_errors += 1
         else:
-            last_logs = output
-            error = 'failed to get last logs'
-        csvwriter.writerow([test_name, status, error, last_logs])
+            num_success += 1
+        csvwriter.writerow([test_name, status, test_error, test_last_logs])
 
-if len(errored_tests) > 0 or len(success_tests) != NUM_SINGLE_MACHINE_TESTS_TO_RUN:
+
+if num_errors > 0 or num_success != NUM_SINGLE_MACHINE_TESTS_TO_RUN:
     print('Test suite failed')
     exit(1)
 else:

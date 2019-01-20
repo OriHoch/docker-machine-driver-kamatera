@@ -74,6 +74,9 @@ export SUITE_RUN_TITLE="kamatera-suite-1"
 export NUM_SINGLE_MACHINE_TESTS_TO_RUN=50
 export MAX_PARALLEL_SINGLE_MACHINE_TESTS=10
 
+# tests an account which is limited to a 500 USD Server, maximum allowed servers: 5, server create frequency: unlimited.
+export TEST_ACCOUNT=PRICELIMIT
+
 docker build -t tests tests/ &&\
 docker run -it \
            -v /var/run/docker.sock:/var/run/docker.sock \
@@ -82,6 +85,7 @@ docker run -it \
            -e KAMATERA_API_SECRET \
            -e "KAMATERA_HOST_PATH=${RESULTS_DIRECTORY}/${SUITE_RUN_TITLE}" \
            -e SUITE_RUN_TITLE -e NUM_SINGLE_MACHINE_TESTS_TO_RUN -e MAX_PARALLEL_SINGLE_MACHINE_TESTS \
+           -e TEST_ACCOUNT \
            tests tests_suite.py
 ```
 
