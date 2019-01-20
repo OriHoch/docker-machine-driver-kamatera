@@ -13,7 +13,7 @@ from create_args_generator import create_args_generator
 
 
 NUM_SINGLE_MACHINE_TESTS_TO_RUN = int(os.environ.get('NUM_SINGLE_MACHINE_TESTS_TO_RUN', '2'))
-MAX_PARALLEL_SINGLE_MACHINE_TESTS = int(os.environ.get('MAX_PARALLEL_SINGLE_MACHINE_TESTS', '20'))
+MAX_PARALLEL_SINGLE_MACHINE_TESTS = int(os.environ.get('MAX_PARALLEL_SINGLE_MACHINE_TESTS', '5'))
 TEST_HOST_DOCKERDIR = os.environ.get('TEST_HOST_DOCKERDIR', '')
 GLOBAL_TIMEOUT_SECONDS = int(os.environ.get('GLOBAL_TIMEOUT_SECONDS', '900'))  # 15 minutes
 

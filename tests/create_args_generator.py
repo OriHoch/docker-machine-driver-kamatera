@@ -39,7 +39,7 @@ def create_args_generator():
             elif opt == 'cpu':
                 values = [v for v in values if int(v.strip('BD')) < 12]
             elif opt == 'ram':
-                values = [v for v in values if 8192 > int(v) >= 512]
+                values = [v for v in values if 8192 > int(v) >= 999]
             value = random.choice(values)
             create_args += [arg, str(value)]
         yield create_args
