@@ -476,6 +476,7 @@ func (d *Driver) getKamateraServerPower() (string, error) {
                 continue
             }
         }
+	log.Debug(resp.String())
         var servers []KamateraServerListInfo
         json.Unmarshal(resp.Body(), &servers)
         serverPower := ""
