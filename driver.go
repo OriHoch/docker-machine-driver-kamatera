@@ -34,6 +34,8 @@ type Driver struct {
 	Ram int
 	DiskSize int
 	Image string
+	PrivateNetworkName string
+	PrivateNetworkIp string
 
 	ServerOptions map[string]interface{}
 	ImageID string
@@ -61,6 +63,8 @@ const (
 	flagDiskSize = "kamatera-disk-size"
 	flagImage = "kamatera-image"
 	flagCreateServerCommandId = "kamatera-create-server-command-id"
+	flagPrivateNetworkName = "kamatera-private-network-name"
+	flagPrivateNetworkIp = "kamatera-private-network-ip"
 )
 
 func NewDriver() *Driver {
@@ -73,6 +77,8 @@ func NewDriver() *Driver {
 	    Image: defaultImage,
 	    CreateServerCommandId: 0,
 	    KamateraServerId: "",
+	    PrivateNetworkName: "",
+	    PrivateNetworkIp: "",
 	    BaseDriver: &drivers.BaseDriver{
 			SSHUser: "root",
 			SSHPort: 22,
@@ -149,6 +155,18 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "Kamatera image name",
 			Value:  defaultImage,
 		},
+		mcnflag.StringFlag{
+			EnvVar: "KAMATERA_PRIVATE_NETWORK_NAME",
+			Name:   flagPrivateNetworkName,
+			Usage:  "Kamatera private network name",
+			Value:  "",
+		},
+		mcnflag.StringFlag{
+			EnvVar: "KAMATERA_PRIVATE_NETWORK_IP",
+			Name:   flagPrivateNetworkIp,
+			Usage:  "Kamatera private network ip (optional)",
+			Value:  "",
+		},
 	}
 }
 
@@ -162,6 +180,8 @@ func (d *Driver) SetConfigFromFlags(opts drivers.DriverOptions) error {
 	d.DiskSize = opts.Int(flagDiskSize)
 	d.Image = opts.String(flagImage)
 	d.CreateServerCommandId = opts.Int(flagCreateServerCommandId)
+	d.PrivateNetworkName = opts.String(flagPrivateNetworkName)
+	d.PrivateNetworkIp = opts.String(flagPrivateNetworkIp)
 
 	d.SetSwarmConfigFromFlags(opts)
 
@@ -182,6 +202,11 @@ type KamateraDiskImage struct {
     SizeGB int `json:sizeGB`
 }
 
+type KamateraNetwork struct {
+    Name string `json:name`
+    Ips interface{} `json:ips`
+}
+
 type KamateraServerOptions struct {
     Datacenters map[string]string `json:datacenters`
     Cpu []string `json:cpu`
@@ -189,6 +214,7 @@ type KamateraServerOptions struct {
     Disk []int `json:disk`
     Billing []string `json:billing`
     DiskImages map[string][]KamateraDiskImage `json:datacenters`
+    Networks map[string][]KamateraNetwork `json:networks`
 }
 
 type KamateraServerCommandInfo struct {
@@ -264,6 +290,18 @@ func (d *Driver) PreCreateCheck() error {
             }
         }
         if d.DiskImageId == "" {return errors.New(fmt.Sprintf("Invalid disk image: %s", d.Image))}
+        if d.PrivateNetworkName != "" {
+            if d.PrivateNetworkIp == "" {
+                networks := res.Networks[d.Datacenter]
+                for _, network := range networks {
+                    if network.Name == d.PrivateNetworkName {
+                        d.PrivateNetworkIp = network.Ips.([]interface {})[0].(string)
+                        break
+                    }
+                }
+                if d.PrivateNetworkIp == "" {return errors.New(fmt.Sprintf("Failed to setup private network %s, please create the network in Kamatera console", d.PrivateNetworkName))}
+            }
+        }
         return nil
     }
 }
@@ -277,10 +315,20 @@ func (d *Driver) Create() error {
         log.Infof("Ram: %d", d.Ram)
         log.Infof("Disk Size (GB): %d", d.DiskSize)
         log.Infof("Disk Image: %s %s", d.Image, d.DiskImageId)
+        private_network_args := ""
+        if d.PrivateNetworkName != "" {
+            log.Infof("Private network name: %s", d.PrivateNetworkName)
+            if d.PrivateNetworkIp != "" {
+                log.Infof("Private network IP: %s", d.PrivateNetworkIp)
+            } else {
+                return errors.New("Invalid private network name/ip")
+            }
+            private_network_args = fmt.Sprintf("&network_name_1=%s&network_ip_1=%s", d.PrivateNetworkName, d.PrivateNetworkIp)
+        }
         password, err := password.Generate(12, 3, 0, false, false)
         if err != nil {return err}
         d.Password = password
-        qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%d&billing=%s&disk_size_0=%d&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0", url.PathEscape(d.Datacenter), url.PathEscape(d.MachineName), url.PathEscape(d.Password), url.PathEscape(d.Cpu), d.Ram, url.PathEscape(d.Billing), d.DiskSize, strings.Replace(url.PathEscape(d.DiskImageId), ":", "%3A", -1), "wan")
+        qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%d&billing=%s&disk_size_0=%d&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0%s", url.PathEscape(d.Datacenter), url.PathEscape(d.MachineName), url.PathEscape(d.Password), url.PathEscape(d.Cpu), d.Ram, url.PathEscape(d.Billing), d.DiskSize, strings.Replace(url.PathEscape(d.DiskImageId), ":", "%3A", -1), "wan", private_network_args)
         log.Debugf("https://console.kamatera.com/service/server?%s", qs)
         payload := strings.NewReader(qs)
         i := 0
