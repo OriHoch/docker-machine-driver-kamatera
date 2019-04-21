@@ -11,6 +11,7 @@ import (
     "regexp"
     "bytes"
     "net/url"
+	"math/rand"
 
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/log"
@@ -36,6 +37,7 @@ type Driver struct {
 	Image string
 	PrivateNetworkName string
 	PrivateNetworkIp string
+	PrivateNetworkIps []string
 
 	ServerOptions map[string]interface{}
 	ImageID string
@@ -44,6 +46,7 @@ type Driver struct {
 	DatacenterName string
 	Password string
 	KamateraServerId string
+	ServerName string
 }
 
 const (
@@ -291,19 +294,44 @@ func (d *Driver) PreCreateCheck() error {
         }
         if d.DiskImageId == "" {return errors.New(fmt.Sprintf("Invalid disk image: %s", d.Image))}
         if d.PrivateNetworkName != "" {
-            if d.PrivateNetworkIp == "" {
+        	if d.PrivateNetworkIp == "" {
                 networks := res.Networks[d.Datacenter]
                 for _, network := range networks {
                     if network.Name == d.PrivateNetworkName {
-                        d.PrivateNetworkIp = network.Ips.([]interface {})[0].(string)
+						for _, networkIp := range network.Ips.([]interface {}) {
+							d.PrivateNetworkIps = append(d.PrivateNetworkIps, networkIp.(string))
+						}
                         break
                     }
                 }
-                if d.PrivateNetworkIp == "" {return errors.New(fmt.Sprintf("Failed to setup private network %s, please create the network in Kamatera console", d.PrivateNetworkName))}
+                if len(d.PrivateNetworkIps) < 1 {
+                	return errors.New(fmt.Sprintf("Failed to setup private network %s, please create the network in Kamatera console and make sure it has available IPs", d.PrivateNetworkName))
+                }
             }
         }
         return nil
     }
+}
+
+func (d *Driver) GetPrivateNetworkIp() string {
+	if d.PrivateNetworkIp == "" {
+		rand.Seed(time.Now().Unix())
+		var newPrivateNetworkIps []string;
+		targetI := rand.Intn(len(d.PrivateNetworkIps))
+		targetIP := ""
+		for i, ip := range d.PrivateNetworkIps {
+			if i == targetI {
+				targetIP = ip
+			} else {
+				newPrivateNetworkIps = append(newPrivateNetworkIps, ip)
+			}
+		}
+		d.PrivateNetworkIps = newPrivateNetworkIps
+		log.Info("Using private network IP: ", targetIP)
+		return targetIP
+	} else {
+		return d.PrivateNetworkIp;
+	}
 }
 
 func (d *Driver) Create() error {
@@ -315,25 +343,36 @@ func (d *Driver) Create() error {
         log.Infof("Ram: %d", d.Ram)
         log.Infof("Disk Size (GB): %d", d.DiskSize)
         log.Infof("Disk Image: %s %s", d.Image, d.DiskImageId)
-        private_network_args := ""
         if d.PrivateNetworkName != "" {
             log.Infof("Private network name: %s", d.PrivateNetworkName)
             if d.PrivateNetworkIp != "" {
-                log.Infof("Private network IP: %s", d.PrivateNetworkIp)
+				log.Infof("Private network IP: %s", d.PrivateNetworkIp)
+			} else if len(d.PrivateNetworkIps) > 0 {
+				log.Info("Available private network IPs: ", len(d.PrivateNetworkIps))
             } else {
-                return errors.New("Invalid private network name/ip")
+            	return errors.New("Invalid private network name or no available IPs")
             }
-            private_network_args = fmt.Sprintf("&network_name_1=%s&network_ip_1=%s", d.PrivateNetworkName, d.PrivateNetworkIp)
         }
-        password, err := password.Generate(12, 3, 0, false, false)
+        password_, err := password.Generate(12, 3, 0, false, false)
         if err != nil {return err}
-        d.Password = password
-        qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%d&billing=%s&disk_size_0=%d&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0%s", url.PathEscape(d.Datacenter), url.PathEscape(d.MachineName), url.PathEscape(d.Password), url.PathEscape(d.Cpu), d.Ram, url.PathEscape(d.Billing), d.DiskSize, strings.Replace(url.PathEscape(d.DiskImageId), ":", "%3A", -1), "wan", private_network_args)
-        log.Debugf("https://console.kamatera.com/service/server?%s", qs)
-        payload := strings.NewReader(qs)
+        d.Password = password_
         i := 0
         for {
-            log.Debugf("Create (%d): %s", i, time.Now())
+			private_network_args := ""
+        	if d.PrivateNetworkName != "" {
+        		private_network_ip := d.GetPrivateNetworkIp()
+        		if private_network_ip == "" {
+        			return errors.New("Failed to get a private network IP")
+				}
+				private_network_args = fmt.Sprintf("&network_name_1=%s&network_ip_1=%s", d.PrivateNetworkName, private_network_ip)
+			}
+			serverNameSuffix, err := password.Generate(6, 0, 0, false, false)
+			if err != nil {return err}
+			d.ServerName = fmt.Sprintf("%s-%s", d.MachineName, serverNameSuffix)
+			qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%d&billing=%s&disk_size_0=%d&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0%s", url.PathEscape(d.Datacenter), url.PathEscape(d.ServerName), url.PathEscape(d.Password), url.PathEscape(d.Cpu), d.Ram, url.PathEscape(d.Billing), d.DiskSize, strings.Replace(url.PathEscape(d.DiskImageId), ":", "%3A", -1), "wan", private_network_args)
+			log.Debugf("https://console.kamatera.com/service/server?%s", qs)
+			payload := strings.NewReader(qs)
+			log.Debugf("Create (%d): %s", i, time.Now())
             if i > 0 {
                 log.Debugf("Retry %d / 10", i)
                 time.Sleep(time.Duration(i * 6000) * time.Millisecond)
@@ -366,7 +405,12 @@ func (d *Driver) Create() error {
             }
             if r.StatusCode != 200 {
                 if r.StatusCode == 500 {
-                    return errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", string(body)))
+                	if d.PrivateNetworkName == "" || d.PrivateNetworkIp != "" || i >= 10 {
+						return errors.New(fmt.Sprintf("Kamatera API responded with the following error: %s", string(body)))
+					} else {
+						log.Debugf(fmt.Sprintf("Kamatera API responded with an error, retrying: %s", string(body)))
+						continue
+					}
                 }
                 log.Info(string(body))
                 if i >= 10 {
@@ -529,7 +573,7 @@ func (d *Driver) getKamateraServerPower() (string, error) {
         json.Unmarshal(resp.Body(), &servers)
         serverPower := ""
         for _, server := range servers {
-            if server.Name == d.MachineName {
+            if server.Name == d.ServerName {
                 serverPower = server.Power
                 break
             }
@@ -567,7 +611,7 @@ func (d *Driver) getKamateraServerId() (string, error) {
             json.Unmarshal(resp.Body(), &servers)
             serverId := ""
             for _, server := range servers {
-                if server.Name == d.MachineName {
+                if server.Name == d.ServerName {
                     serverId = server.Id
                     break
                 }
