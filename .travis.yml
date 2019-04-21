@@ -26,9 +26,9 @@ env:
   - secure: "yn7xw04Za9RFJSjRO4GNJJeVpVepnBFBTBk8iTn1jVDZCWb5RHEQUvOhsv1LY7D5NVODR94CGo8g49ZfWsJUujfStbkKzPc9R1DN8b4dmVuUKqjSHplu0MkGV74xlidyBFWQye7G7FI+WrUbo7/UUdQ+0IJyP4EO5LihPNDtI6zvh6oP2OF+cdXz/LsZBgn03k0Qn6amA2k3R7AoT85MuYSFcJ8r5307LbPZhaJVbeK36XkzGqBbg1v6KjVfoBPc2Qa6nGnMGykr1Zued4B52ZQGc7jFVKsJGPbFJXhVX4n5Uk8gnN8PS52zMp1loSS+5wC2My4Tt4A2JjLDUXQ7xYj2d+sPythwVS1EnxE326UhwvdO3VL0r8LEx5Noi9z2ztg7M/xTU4E/gBRY/QvE96Vsd8A0XBaUwJjxjCLTLsBm9MmS23RrqJQMIU7f0RExAGIjV9/PLX7pRxEHsPwJj25u++VH/t4QqdBLHY6ttI5MmUmBJqpnXCbTFVkGGjg0koyy3F4prDbdqY2Xh+ABIpqgCL1Ti/DJAfPXIU9jYuLB7imjw4CwslZQVy9yzy87EwDHrrYUVUH+wkT5PkCDPpWxlBzzJQo8NWQ39MWzdGLSHABbue2veEPdXnb712hgOCSH03pV49j/eZlQyorJSRBN9DvJIef42Dwp3pqZ15k="
   - ARTIFACTS_PATHS="./test_results/:./tests/"
   matrix:
-  - TEST_ACCOUNT=PRICELIMIT
+#  - TEST_ACCOUNT=PRICELIMIT
   - TEST_ACCOUNT=NOLIMIT
-  - TEST_ACCOUNT=FREQLIMIT
+#  - TEST_ACCOUNT=FREQLIMIT
 
 services:
   - docker
@@ -60,9 +60,11 @@ script:
   - |
     ( docker pull kamatera/kamatera-docker-machine-driver-tests || true ) &&\
     docker build --cache-from kamatera/kamatera-docker-machine-driver-tests -t tests tests/
+  # export KAMATERA_API_CLIENT_ID="$(eval echo \$KAMATERA_${TEST_ACCOUNT}_CLIENT_ID)"; \
+  # export KAMATERA_API_SECRET="$(eval echo \$KAMATERA_${TEST_ACCOUNT}_SECRET)"; \
   - |
-    export KAMATERA_API_CLIENT_ID="$(eval echo \$KAMATERA_${TEST_ACCOUNT}_CLIENT_ID)"; \
-    export KAMATERA_API_SECRET="$(eval echo \$KAMATERA_${TEST_ACCOUNT}_SECRET)"; \
+    export KAMATERA_API_CLIENT_ID="${TEST_API_CLIENT_ID}"; \
+    export KAMATERA_API_SECRET="${TEST_API_SECRET}"; \
     docker run -t \
                -v /var/run/docker.sock:/var/run/docker.sock \
                -v "`pwd`/test_results/kamatera-suite-1/:/test_results/" \
@@ -75,9 +77,11 @@ script:
   - sudo chown -R $USER test_results/ tests/
   - docker tag tests kamatera/kamatera-docker-machine-driver-tests
   - docker push kamatera/kamatera-docker-machine-driver-tests
+  # export KAMATERA_API_CLIENT_ID="$(eval echo \$KAMATERA_${TEST_ACCOUNT}_CLIENT_ID)"; \
+  # export KAMATERA_API_SECRET="$(eval echo \$KAMATERA_${TEST_ACCOUNT}_SECRET)"; \
   - |
-    export KAMATERA_API_CLIENT_ID="$(eval echo \$KAMATERA_${TEST_ACCOUNT}_CLIENT_ID)"; \
-    export KAMATERA_API_SECRET="$(eval echo \$KAMATERA_${TEST_ACCOUNT}_SECRET)"; \
+    export KAMATERA_API_CLIENT_ID="${TEST_API_CLIENT_ID}"; \
+    export KAMATERA_API_SECRET="${TEST_API_SECRET}"; \
     docker run -t -e KAMATERA_API_CLIENT_ID -e KAMATERA_API_SECRET tests cleanup.py "ktm-"
 
 after_failure:
