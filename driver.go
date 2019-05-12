@@ -213,7 +213,8 @@ type KamateraNetwork struct {
 type KamateraServerOptions struct {
     Datacenters map[string]string `json:datacenters`
     Cpu []string `json:cpu`
-    Ram []int `json:ram`
+    // RAM structure changed to include a level of CPU type, which is the suffix letter of the selected CPU string
+    // Ram []int `json:ram`
     Disk []int `json:disk`
     Billing []string `json:billing`
     DiskImages map[string][]KamateraDiskImage `json:datacenters`
@@ -281,7 +282,8 @@ func (d *Driver) PreCreateCheck() error {
         d.DatacenterName = res.Datacenters[d.Datacenter]
         if d.DatacenterName == "" {return errors.New("Invalid datacenter")}
         if ! IsStringInArray(d.Cpu, res.Cpu) {return errors.New("Invalid CPU")}
-        if ! IsIntInArray(d.Ram, res.Ram) {return errors.New("Invalid ram")}
+        // RAM server options contain an additional level of CPU type which is not handled in this validation
+        // if ! IsIntInArray(d.Ram, res.Ram) {return errors.New("Invalid ram")}
         if d.Ram < 999 {return errors.New("Insufficient RAM, Please use at least 1GB of RAM.")}
         if ! IsIntInArray(d.DiskSize, res.Disk) {return errors.New("Invalid disk size")}
         if ! IsStringInArray(d.Billing, res.Billing) {return errors.New("Invalid billing")}
