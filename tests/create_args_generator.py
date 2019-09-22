@@ -37,7 +37,7 @@ def create_args_generator():
                 values = list(values.keys())
                 values = [v for v in values if v not in ['DEV']]
             elif opt == 'cpu':
-                values = [v for v in values if int(v.strip('BD')) < 12]
+                values = [v for v in values if int(v.strip('BDAT')) < 12]
             elif opt == 'ram':
                 values = [v for v in values['B'] if 8192 > int(v) >= 999]
             value = random.choice(values)
