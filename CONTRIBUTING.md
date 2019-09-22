@@ -40,6 +40,12 @@ export KAMATERA_API_CLIENT_ID=
 export KAMATERA_API_SECRET=
 ```
 
+Add current directory to PATH so that docker-machine can find the driver binary:
+
+```
+export PATH=`pwd`:$PATH
+```
+
 Create a machine
 
 ```

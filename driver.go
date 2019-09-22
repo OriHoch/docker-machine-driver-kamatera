@@ -31,6 +31,7 @@ type Driver struct {
 	APISecret string
 	Datacenter string
 	Billing string
+	Traffic string
 	Cpu string
 	Ram int
 	DiskSize int
@@ -52,6 +53,7 @@ type Driver struct {
 const (
     defaultDatacenter = "EU"
 	defaultBilling = "hourly"
+	defaultTraffic = "t5000"
 	defaultCpu  = "1B"
 	defaultRam = 1024
 	defaultDiskSize = 10
@@ -61,6 +63,7 @@ const (
 	flagAPISecret = "kamatera-api-secret"
 	flagDatacenter = "kamatera-datacenter"
 	flagBilling = "kamatera-billing"
+	flagTraffic = "kamatera-traffic"
 	flagCpu = "kamatera-cpu"
 	flagRam = "kamatera-ram"
 	flagDiskSize = "kamatera-disk-size"
@@ -74,6 +77,7 @@ func NewDriver() *Driver {
 	return &Driver{
 	    Datacenter: defaultDatacenter,
 	    Billing: defaultBilling,
+	    Traffic: defaultTraffic,
 	    Cpu: defaultCpu,
 	    Ram: defaultRam,
 	    DiskSize: defaultDiskSize,
@@ -135,6 +139,12 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Value:  defaultBilling,
 		},
 		mcnflag.StringFlag{
+			EnvVar: "KAMATERA_TRAFFIC",
+			Name:   flagTraffic,
+			Usage:  "Kamatera monthly traffic package",
+			Value:  defaultTraffic,
+		},
+		mcnflag.StringFlag{
 			EnvVar: "KAMATERA_CPU",
 			Name:   flagCpu,
 			Usage:  "Kamatera CPU",
@@ -178,6 +188,7 @@ func (d *Driver) SetConfigFromFlags(opts drivers.DriverOptions) error {
 	d.APISecret = opts.String(flagAPISecret)
 	d.Datacenter = opts.String(flagDatacenter)
 	d.Billing = opts.String(flagBilling)
+	d.Traffic = opts.String(flagTraffic)
 	d.Cpu = opts.String(flagCpu)
 	d.Ram = opts.Int(flagRam)
 	d.DiskSize = opts.Int(flagDiskSize)
@@ -210,6 +221,11 @@ type KamateraNetwork struct {
     Ips interface{} `json:ips`
 }
 
+type KamateraTraffic struct {
+	Id interface{} `json:id`
+	Info string `json:info"`
+}
+
 type KamateraServerOptions struct {
     Datacenters map[string]string `json:datacenters`
     Cpu []string `json:cpu`
@@ -219,6 +235,7 @@ type KamateraServerOptions struct {
     Billing []string `json:billing`
     DiskImages map[string][]KamateraDiskImage `json:datacenters`
     Networks map[string][]KamateraNetwork `json:networks`
+    Traffic map[string][]KamateraTraffic `json:traffic`
 }
 
 type KamateraServerCommandInfo struct {
@@ -311,6 +328,21 @@ func (d *Driver) PreCreateCheck() error {
                 }
             }
         }
+        if d.Billing == "monthly" {
+            traffic_infos := "Available traffic options for monthly package:\n Traffic | Description\n"
+            traffic_ok := false
+            for _, traffic := range res.Traffic[d.Datacenter] {
+                traffic_id := fmt.Sprintf("%v", traffic.Id)
+		        traffic_infos += fmt.Sprintf("%8s | %s\n", traffic_id, traffic.Info)
+		        if traffic_id == d.Traffic {
+		            traffic_ok = true
+		        }
+		    }
+            if ! traffic_ok {
+                fmt.Println(traffic_infos)
+                return errors.New(fmt.Sprintf("traffic flag is required when using monthly billing, please choose from the available traffic options"))
+		    }
+		}
         return nil
     }
 }
@@ -371,7 +403,7 @@ func (d *Driver) Create() error {
 			serverNameSuffix, err := password.Generate(6, 0, 0, false, false)
 			if err != nil {return err}
 			d.ServerName = fmt.Sprintf("%s-%s", d.MachineName, serverNameSuffix)
-			qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%d&billing=%s&disk_size_0=%d&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0%s", url.PathEscape(d.Datacenter), url.PathEscape(d.ServerName), url.PathEscape(d.Password), url.PathEscape(d.Cpu), d.Ram, url.PathEscape(d.Billing), d.DiskSize, strings.Replace(url.PathEscape(d.DiskImageId), ":", "%3A", -1), "wan", private_network_args)
+			qs := fmt.Sprintf("datacenter=%s&name=%s&password=%s&cpu=%s&ram=%d&billing=%s&traffic=%s&disk_size_0=%d&disk_src_0=%s&network_name_0=%s&power=1&managed=0&backup=0%s", url.PathEscape(d.Datacenter), url.PathEscape(d.ServerName), url.PathEscape(d.Password), url.PathEscape(d.Cpu), d.Ram, url.PathEscape(d.Billing), url.PathEscape(d.Traffic), d.DiskSize, strings.Replace(url.PathEscape(d.DiskImageId), ":", "%3A", -1), "wan", private_network_args)
 			log.Debugf("https://console.kamatera.com/service/server?%s", qs)
 			payload := strings.NewReader(qs)
 			log.Debugf("Create (%d): %s", i, time.Now())
