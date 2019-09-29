@@ -32,6 +32,7 @@ type Driver struct {
 	Datacenter string
 	Billing string
 	Traffic string
+	TrafficDescription string
 	Cpu string
 	Ram int
 	DiskSize int
@@ -53,7 +54,6 @@ type Driver struct {
 const (
     defaultDatacenter = "EU"
 	defaultBilling = "hourly"
-	defaultTraffic = "t5000"
 	defaultCpu  = "1B"
 	defaultRam = 1024
 	defaultDiskSize = 10
@@ -77,7 +77,8 @@ func NewDriver() *Driver {
 	return &Driver{
 	    Datacenter: defaultDatacenter,
 	    Billing: defaultBilling,
-	    Traffic: defaultTraffic,
+	    Traffic: "",
+	    TrafficDescription: "",
 	    Cpu: defaultCpu,
 	    Ram: defaultRam,
 	    DiskSize: defaultDiskSize,
@@ -142,7 +143,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			EnvVar: "KAMATERA_TRAFFIC",
 			Name:   flagTraffic,
 			Usage:  "Kamatera monthly traffic package",
-			Value:  defaultTraffic,
+			Value:  "",
 		},
 		mcnflag.StringFlag{
 			EnvVar: "KAMATERA_CPU",
@@ -330,17 +331,27 @@ func (d *Driver) PreCreateCheck() error {
         }
         if d.Billing == "monthly" {
             traffic_infos := "Available traffic options for monthly package:\n Traffic | Description\n"
-            traffic_ok := false
+            first_traffic_id := ""
+            first_traffic_description := ""
             for _, traffic := range res.Traffic[d.Datacenter] {
                 traffic_id := fmt.Sprintf("%v", traffic.Id)
+                if first_traffic_id == "" {
+                	first_traffic_id = traffic_id
+                	first_traffic_description = traffic.Info
+				}
 		        traffic_infos += fmt.Sprintf("%8s | %s\n", traffic_id, traffic.Info)
 		        if traffic_id == d.Traffic {
-		            traffic_ok = true
+		            d.TrafficDescription = traffic.Info
 		        }
 		    }
-            if ! traffic_ok {
-                fmt.Println(traffic_infos)
-                return errors.New(fmt.Sprintf("traffic flag is required when using monthly billing, please choose from the available traffic options"))
+            if d.TrafficDescription == "" {
+            	if d.Traffic == "" && first_traffic_id != "" {
+            		d.Traffic = first_traffic_id
+            		d.TrafficDescription = first_traffic_description
+				} else {
+					fmt.Println(traffic_infos)
+					return errors.New(fmt.Sprintf("traffic flag is required when using monthly billing, please choose from the available traffic options"))
+				}
 		    }
 		}
         return nil
@@ -377,6 +388,10 @@ func (d *Driver) Create() error {
         log.Infof("Ram: %d", d.Ram)
         log.Infof("Disk Size (GB): %d", d.DiskSize)
         log.Infof("Disk Image: %s %s", d.Image, d.DiskImageId)
+        log.Infof("Billing: %s", d.Billing)
+        if d.Billing == "monthly" {
+        	log.Infof("Traffic package: %s", d.TrafficDescription)
+		}
         if d.PrivateNetworkName != "" {
             log.Infof("Private network name: %s", d.PrivateNetworkName)
             if d.PrivateNetworkIp != "" {
