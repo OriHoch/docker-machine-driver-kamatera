@@ -315,18 +315,7 @@ func (d *Driver) PreCreateCheck() error {
         if d.DiskImageId == "" {return errors.New(fmt.Sprintf("Invalid disk image: %s", d.Image))}
         if d.PrivateNetworkName != "" {
         	if d.PrivateNetworkIp == "" {
-                networks := res.Networks[d.Datacenter]
-                for _, network := range networks {
-                    if network.Name == d.PrivateNetworkName {
-						for _, networkIp := range network.Ips.([]interface {}) {
-							d.PrivateNetworkIps = append(d.PrivateNetworkIps, networkIp.(string))
-						}
-                        break
-                    }
-                }
-                if len(d.PrivateNetworkIps) < 1 {
-                	return errors.New(fmt.Sprintf("Failed to setup private network %s, please create the network in Kamatera console and make sure it has available IPs", d.PrivateNetworkName))
-                }
+                d.PrivateNetworkIp = "auto"
             }
         }
         if d.Billing == "monthly" {
